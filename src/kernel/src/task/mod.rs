@@ -23,7 +23,6 @@ impl TaskId {
     }
 }
 
-
 /// Task priority levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Priority {
@@ -60,4 +59,3 @@ impl Task {
         self.future.as_mut().poll(context)
     }
 }
-

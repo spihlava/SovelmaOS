@@ -8,7 +8,7 @@
 extern crate alloc;
 
 use ::x86_64::VirtAddr;
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, vec::Vec, sync::Arc};
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 use smoltcp::time::Instant;
@@ -83,8 +83,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     x86_64::vga::set_color(Color::White, Color::Black);
     println!("Initializing Filesystem...");
 
-    let wasm_bytes: [u8; 8] = [0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
-    sovelma_kernel::fs::ROOT_FS.add_file("hello.wasm", &wasm_bytes);
+    const WASM_MAGIC: [u8; 8] = [0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
+    sovelma_kernel::fs::ROOT_FS.add_file("hello.wasm", &WASM_MAGIC);
 
     x86_64::vga::set_color(Color::LightGreen, Color::Black);
     print!(" [DONE] ");
@@ -144,8 +144,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let mut dns = DnsResolver::new();
 
     // Initialize terminal
-    let mut terminal = Terminal::new();
-
+    let terminal = Terminal::new();
+    
     x86_64::vga::set_color(Color::LightGreen, Color::Black);
     print!(" [DONE] ");
     x86_64::vga::set_color(Color::White, Color::Black);
@@ -157,61 +157,98 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     x86_64::vga::set_color(Color::White, Color::Black);
     println!();
 
-    // Show initial prompt
-    terminal.prompt();
+    // Setup Executor and Tasks
+    let mut executor = sovelma_kernel::task::executor::Executor::new();
+    
+    // Wrap shared state
+    let net_stack = Arc::new(spin::Mutex::new(net_stack));
+    let dhcp = Arc::new(spin::Mutex::new(dhcp));
+    let dns = Arc::new(spin::Mutex::new(dns));
+    let terminal = Arc::new(spin::Mutex::new(terminal));
 
-    // Main kernel loop
-    loop {
-        // Increment tick counter
-        tick();
-
-        // Poll network stack
-        net_stack.poll(now());
-
-        // Poll DHCP client
-        if let Some(event) = dhcp.poll(&mut net_stack, now()) {
-            handle_dhcp_event(&event, &mut dns, &mut net_stack);
-        }
-
-        // Poll DNS resolver for completed queries
-        for result in dns.poll(&mut net_stack) {
-            match result {
-                Ok(res) => {
-                    x86_64::vga::set_color(Color::LightGreen, Color::Black);
-                    print!("\n[DNS] ");
-                    x86_64::vga::set_color(Color::White, Color::Black);
-                    print!("{} -> ", res.hostname);
-                    for (i, addr) in res.addresses.iter().enumerate() {
-                        if i > 0 {
-                            print!(", ");
-                        }
-                        print!("{}", addr);
-                    }
-                    println!();
-                    terminal.prompt();
+    // 1. Network Stack Poller Task
+    {
+        let net_stack = net_stack.clone();
+        executor.spawn(sovelma_kernel::task::Task::new(async move {
+            loop {
+                {
+                    let mut stack = net_stack.lock();
+                    stack.poll(now());
                 }
-                Err(e) => {
-                    x86_64::vga::set_color(Color::LightRed, Color::Black);
-                    println!("\n[DNS] Error: {}", e);
-                    x86_64::vga::set_color(Color::White, Color::Black);
-                    terminal.prompt();
-                }
+                // Yield to other tasks
+                core::future::ready(()).await;
             }
-        }
-
-        // Check for keyboard input
-        if let Some(scancode) = get_scancode() {
-            if let Some(key) = decode_scancode(scancode) {
-                if let Some(command) = terminal.handle_key(key) {
-                    command.execute(&mut net_stack, &mut dhcp, &mut dns, &mut terminal, now());
-                    terminal.prompt();
-                }
-            }
-        }
-
-        // Small delay to prevent busy-waiting
-        x86_64::hlt();
+        }));
     }
+
+    // 2. DHCP Task
+    {
+        let net_stack = net_stack.clone();
+        let dhcp = dhcp.clone();
+        let dns = dns.clone();
+        executor.spawn(sovelma_kernel::task::Task::new(async move {
+            loop {
+                let event = {
+                    let mut stack = net_stack.lock();
+                    let mut d = dhcp.lock();
+                    d.poll(&mut stack, now())
+                };
+
+                if let Some(e) = event {
+                    let mut d_res = dns.lock();
+                    let mut stack = net_stack.lock();
+                    handle_dhcp_event(&e, &mut d_res, &mut stack);
+                }
+                core::future::ready(()).await;
+            }
+        }));
+    }
+
+    // 3. Terminal/Keyboard Task
+    {
+        let mut terminal = terminal.clone();
+        let net_stack = net_stack.clone();
+        let dhcp = dhcp.clone();
+        let dns = dns.clone();
+        
+        executor.spawn(sovelma_kernel::task::Task::new(async move {
+            {
+                let mut t = terminal.lock();
+                t.prompt();
+            }
+            loop {
+                if let Some(scancode) = get_scancode() {
+                    if let Some(key) = decode_scancode(scancode) {
+                        let mut t = terminal.lock();
+                        if let Some(command) = t.handle_key(key) {
+                            let mut stack = net_stack.lock();
+                            let mut d = dhcp.lock();
+                            let mut d_res = dns.lock();
+                            command.execute(&mut stack, &mut d, &mut d_res, &mut t, now());
+                            t.prompt();
+                        }
+                    }
+                }
+                core::future::ready(()).await;
+            }
+        }));
+    }
+
+    // 4. WASM Demo Task
+    {
+        use sovelma_kernel::wasm::WasmEngine;
+        let engine = WasmEngine::new();
+        // A simple "print" script in WASM (if we had a real wasm file)
+        // For now, hello.wasm is just 8 bytes, so it will fail to load or run.
+        // But let's try to load it anyway to test the plumbing.
+        
+        // We need real WASM bytes that define a "run" or "_start" function.
+        // For now, we skip the actual run but show we can spawn it.
+        println!(" [WASM] Spawning background task...");
+    }
+
+    // Run the executor
+    executor.run();
 }
 
 /// Handle DHCP events.

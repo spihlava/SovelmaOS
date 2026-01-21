@@ -1,16 +1,46 @@
-
-use core::sync::atomic::{AtomicU32, Ordering};
 use bitflags::bitflags;
+use core::sync::atomic::{AtomicU32, Ordering};
 
-/// A unique identifier for a capability.
+/// A unique identifier for a capability, including a generation for revocation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CapId(u32);
+pub struct CapId {
+    index: u32,
+    generation: u32,
+}
 
 impl CapId {
-    /// Generate the next unique CapId.
+    /// Create from components.
+    pub fn new(index: u32, generation: u32) -> Self {
+        CapId { index, generation }
+    }
+
+    /// Create from raw u64.
+    pub fn from_u64(val: u64) -> Self {
+        CapId {
+            index: (val & 0xFFFFFFFF) as u32,
+            generation: (val >> 32) as u32,
+        }
+    }
+
+    /// Get raw u64.
+    pub fn as_u64(&self) -> u64 {
+        ((self.generation as u64) << 32) | (self.index as u64)
+    }
+
+    /// Get index.
+    pub fn index(&self) -> u32 {
+        self.index
+    }
+
+    /// Get generation.
+    pub fn generation(&self) -> u32 {
+        self.generation
+    }
+
+    /// Generate the next unique CapId with generation 0.
     pub fn next() -> Self {
-        static NEXT_ID: AtomicU32 = AtomicU32::new(1);
-        CapId(NEXT_ID.fetch_add(1, Ordering::Relaxed))
+        static NEXT_INDEX: AtomicU32 = AtomicU32::new(100); // Start high to avoid collision with small manual ones
+        CapId::new(NEXT_INDEX.fetch_add(1, Ordering::Relaxed), 0)
     }
 }
 
@@ -41,8 +71,9 @@ pub struct Capability {
 
 impl Capability {
     pub fn new(object: CapabilityType, rights: CapabilityRights) -> Self {
+        static NEXT_INDEX: AtomicU32 = AtomicU32::new(1);
         Self {
-            id: CapId::next(),
+            id: CapId::new(NEXT_INDEX.fetch_add(1, Ordering::Relaxed), 0),
             rights,
             object,
             generation: 0,
@@ -74,5 +105,8 @@ pub enum CapabilityType {
     },
     /// Net socket
     Network(u32),
+    /// Filesystem Directory (handle)
+    Directory(u64),
+    /// Open File (handle)
+    File(u64),
 }
-

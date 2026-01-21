@@ -4,4 +4,6 @@ members = [
     "src/kernel",
     "src/hal",
     "src/common",
+    "src/userspace/sdk",
+    "src/userspace/apps/hello",
 ]

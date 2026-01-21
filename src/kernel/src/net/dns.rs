@@ -101,12 +101,8 @@ impl DnsResolver {
                 })
             }
             Err(StartQueryError::NoFreeSlot) => Err(NetError::BufferFull),
-            Err(StartQueryError::InvalidName) => {
-                Err(NetError::DnsError("invalid hostname".to_string()))
-            }
-            Err(StartQueryError::NameTooLong) => {
-                Err(NetError::DnsError("hostname too long".to_string()))
-            }
+            Err(StartQueryError::InvalidName) => Err(NetError::DnsError),
+            Err(StartQueryError::NameTooLong) => Err(NetError::DnsError),
         }
     }
 
@@ -140,11 +136,8 @@ impl DnsResolver {
                     i += 1; // Still waiting, check next
                 }
                 Err(GetQueryResultError::Failed) => {
-                    let (_, _, hostname) = self.pending.remove(i);
-                    results.push(Err(NetError::DnsError(format!(
-                        "failed to resolve {}",
-                        hostname
-                    ))));
+                    let _ = self.pending.remove(i);
+                    results.push(Err(NetError::DnsError));
                 }
             }
         }
@@ -177,11 +170,8 @@ impl DnsResolver {
             Err(GetQueryResultError::Pending) => None,
             Err(GetQueryResultError::Failed) => {
                 if let Some(pos) = self.pending.iter().position(|(id, _, _)| *id == query.id) {
-                    let (_, _, hostname) = self.pending.remove(pos);
-                    Some(Err(NetError::DnsError(format!(
-                        "failed to resolve {}",
-                        hostname
-                    ))))
+                    let _ = self.pending.remove(pos);
+                    Some(Err(NetError::DnsError))
                 } else {
                     None
                 }

@@ -39,7 +39,13 @@ All resources (Memory, IPC, IRQ, Network) are guarded by `CapId` tokens.
 Modules interact with the kernel strictly through Host Functions.
 - **System**: `sp_yield`, `sp_sleep`, `sp_log`
 - **Network**: `sp_net_connect`, `sp_net_send`, `sp_net_recv`
+- **Filesystem**: `sp_fs_open`, `sp_fs_read`, `sp_fs_size`, `sp_fs_close`
 - **GPIO**: `sp_gpio_read`, `sp_gpio_write` (Cap-gated)
+
+### 3.4 Filesystem
+- **In-Memory**: Initial implementation is a RamFS.
+- **Interface**: Path-based open, stateful or offset-based read.
+
 
 ## 5. Boot Sequence
 1. **Bootloader**: Loads Kernel.

@@ -361,8 +361,8 @@ fn cmd_sysinfo() {
 }
 /// Run a simple WASM module test.
 fn cmd_wasm_test(filename: &str) {
+    use crate::fs::{FileSystem, ROOT_FS};
     use crate::wasm::WasmEngine;
-    use crate::fs::{ROOT_FS, FileSystem};
     use alloc::vec;
 
     println!();
@@ -381,7 +381,7 @@ fn cmd_wasm_test(filename: &str) {
             return;
         }
     };
-    
+
     // Read file
     let size = ROOT_FS.size(handle).unwrap_or(0);
     let mut buffer = vec![0u8; size];
@@ -391,16 +391,27 @@ fn cmd_wasm_test(filename: &str) {
         vga::set_color(Color::White, Color::Black);
         return;
     }
-    
+
     ROOT_FS.close(handle);
 
     let engine = WasmEngine::new();
-    // For now, just spawn process. In future, we'd add it to executor.
     match engine.spawn_process(&buffer) {
-        Ok(_process) => {
+        Ok(mut process) => {
             vga::set_color(Color::LightGreen, Color::Black);
             println!("WASM process spawned successfully!");
-            // In a real scenario, we'd now poll the process or add it to the executor.
+            vga::set_color(Color::White, Color::Black);
+
+            println!("Executing _start...");
+            match process.call("_start", &[]) {
+                Ok(_) => {
+                    vga::set_color(Color::LightGreen, Color::Black);
+                    println!("_start completed successfully!");
+                }
+                Err(e) => {
+                    vga::set_color(Color::LightRed, Color::Black);
+                    println!("Execution failed: {:?}", e);
+                }
+            }
         }
         Err(e) => {
             vga::set_color(Color::LightRed, Color::Black);

@@ -1,10 +1,9 @@
 //! System-wide error types for SovelmaOS.
 
-use alloc::string::String;
 use core::fmt;
 
 /// Network subsystem error types.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NetError {
     /// Device not initialized
     DeviceNotReady,
@@ -19,7 +18,7 @@ pub enum NetError {
     /// Invalid address format
     InvalidAddress,
     /// DNS resolution failed
-    DnsError(String),
+    DnsError,
     /// DHCP failed to acquire lease
     DhcpFailed,
     /// Generic I/O error
@@ -35,7 +34,7 @@ impl fmt::Display for NetError {
             NetError::Timeout => write!(f, "connection timed out"),
             NetError::BufferFull => write!(f, "socket buffer full"),
             NetError::InvalidAddress => write!(f, "invalid address format"),
-            NetError::DnsError(msg) => write!(f, "DNS error: {}", msg),
+            NetError::DnsError => write!(f, "DNS error"),
             NetError::DhcpFailed => write!(f, "DHCP failed to acquire lease"),
             NetError::IoError => write!(f, "I/O error"),
         }

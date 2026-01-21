@@ -41,7 +41,9 @@ impl Executor {
         if self.tasks.insert(task_id, task).is_some() {
             panic!("task with same ID already in tasks");
         }
-        self.task_queues[priority].push(task_id).expect("queue full");
+        self.task_queues[priority]
+            .push(task_id)
+            .expect("queue full");
     }
 
     /// Run all ready tasks.
@@ -49,18 +51,19 @@ impl Executor {
         // Iterate queues from Critical (3) down to Idle (0)
         for priority in (0..4).rev() {
             let queue = &self.task_queues[priority];
-            
+
             // Process all tasks in this priority level before moving lower
             while let Some(task_id) = queue.pop() {
                 let task = match self.tasks.get_mut(&task_id) {
                     Some(task) => task,
                     None => continue, // task no longer exists
                 };
-                
-                let waker = self.waker_cache
+
+                let waker = self
+                    .waker_cache
                     .entry(task_id)
                     .or_insert_with(|| TaskWaker::new(task_id, self.task_queues[priority].clone()));
-                
+
                 let mut context = Context::from_waker(waker);
                 match task.poll(&mut context) {
                     Poll::Ready(()) => {

@@ -2,7 +2,6 @@
 //!
 //! Uses the wasmi interpreter for no_std compatible execution.
 
-use crate::serial_println;
 use alloc::boxed::Box;
 use core::{
     future::Future,
@@ -46,13 +45,13 @@ impl WasmEngine {
         // wasmi 0.31 doesn't easily let us wrap `start` in a resumable way if it's not a TypedFunc.
         // We will assume _start is short-lived or we accept it blocks for init.
         // The process then relies on the *message loop* being async, or we use "call" on a known entry point.
-        
+
         // Strategy: Instantiate synchronously (Init). Then return a Process that can have methods called.
         // But if the user provides a raw module that runs main() in start(), we block.
         // For now, we follow standard instantiation.
-        
+
         let instance = linker.instantiate(&mut store, &module)?.start(&mut store)?;
-        
+
         // We grant some initial fuel
         store.add_fuel(10_000).ok();
 
@@ -86,47 +85,150 @@ pub struct WasmProcess {
 
 impl WasmProcess {
     /// Call a function exported by the module.
-    pub fn call(&mut self, name: &str, params: &[wasmi::Value]) -> Result<Box<[wasmi::Value]>, wasmi::Error> {
-        let func = self.instance.get_func(&self.store, name)
-            .ok_or_else(|| wasmi::Error::from(wasmi::core::Trap::from(wasmi::core::TrapCode::UnreachableCodeReached)))?;
-        
+    pub fn call(
+        &mut self,
+        name: &str,
+        params: &[wasmi::Value],
+    ) -> Result<Box<[wasmi::Value]>, wasmi::Error> {
+        let func = self.instance.get_func(&self.store, name).ok_or_else(|| {
+            wasmi::Error::from(wasmi::core::Trap::from(
+                wasmi::core::TrapCode::UnreachableCodeReached,
+            ))
+        })?;
+
         // This is still blocking. To be async, we need a "CallFuture".
         // For MVP step 1, we expose this. WasmTask wrapper would use `call` in a loop? No.
         // We need `call_resumable`.
-        
+
         let mut results = [wasmi::Value::I32(0); 1]; // Buffer
         func.call(&mut self.store, params, &mut results)?;
         Ok(Box::new(results)) // Simplify return
-        
+
         // NOTE: Truly async requires `call_resumable` which is verbose to setup here.
         // We will refactor this to return a Future in the next iteration once the struct is in place.
     }
+    /// Call a function asynchronously.
+    pub fn call_async<'a>(&'a mut self, name: &'a str) -> WasmCallFuture<'a> {
+        WasmCallFuture {
+            process: self,
+            func_name: name,
+            invocation: None,
+        }
+    }
+
+    /// Spawn this process as a kernel task.
+    pub fn spawn_task(self, name: &str, executor: &mut crate::task::executor::Executor) {
+        use crate::task::{Priority, Task};
+        
+        let task = WasmTask {
+            process: self,
+            func_name: alloc::string::String::from(name),
+            invocation: None,
+        };
+
+        executor.spawn(Task::with_priority(async move {
+            match task.await {
+                Ok(_) => crate::println!("[WASM] Completed."),
+                Err(e) => crate::println!("[WASM] Error: {:?}", e),
+            }
+        }, Priority::Normal));
+    }
 }
+
+/// A Future that owns a WASM process and runs a function to completion.
+pub struct WasmTask {
+    process: WasmProcess,
+    func_name: alloc::string::String,
+    invocation: Option<wasmi::ResumableInvocation>,
+}
+
+impl Future for WasmTask {
+    type Output = Result<(), wasmi::Error>;
+
+    fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        
+        // Ensure we have fuel
+        this.process.store.add_fuel(10_000).ok();
+
+        let result = match this.invocation.take() {
+            None => {
+                let func = this.process.instance.get_func(&this.process.store, &this.func_name).ok_or_else(|| {
+                    wasmi::Error::from(wasmi::core::Trap::from(
+                        wasmi::core::TrapCode::UnreachableCodeReached,
+                    ))
+                })?;
+                
+                let mut results = [wasmi::Value::I32(0); 1];
+                func.call_resumable(&mut this.process.store, &[], &mut results)
+            }
+            Some(invocation) => {
+                let mut results = [wasmi::Value::I32(0); 1];
+                invocation.resume(&mut this.process.store, &[], &mut results)
+            }
+        };
+
+        match result {
+            Ok(wasmi::ResumableCall::Finished) => Poll::Ready(Ok(())),
+            Ok(wasmi::ResumableCall::Resumable(invocation)) => {
+                this.invocation = Some(invocation);
+                Poll::Pending
+            }
+            Err(e) => Poll::Ready(Err(e)),
+        }
+    }
+}
+
 
 /// A Future wrapper for a WASM function call.
 pub struct WasmCallFuture<'a> {
     process: &'a mut WasmProcess,
     func_name: &'a str,
+    invocation: Option<wasmi::ResumableInvocation>,
 }
 
 impl Future for WasmCallFuture<'_> {
     type Output = Result<(), wasmi::Error>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-         // This is where we would drive the interpreter.
-         // Since wasmi 0.31 `call` is blocking unless we use `resumable`, we simulate yielding via fuel?
-         // No, standard `call` doesn't return on fuel, it traps.
-         // If we trap, we have to handle it.
-         
-         // Temporary Stub: Just run it.
-         // In real implementation, this checks fuel remaining, adds fuel, runs, handles OutOfFuel trap by returning Pending.
-         
-         // Fix: Access func_name from self, not self.process
-         let func_name = self.func_name;
-         
-         match self.process.call(func_name, &[]) {
-            Ok(_) => Poll::Ready(Ok(())),
-            Err(e) => Poll::Ready(Err(e)),
-         }
+    fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        
+        // Ensure we have fuel (Always add some for now)
+        this.process.store.add_fuel(10_000).ok();
+
+        let result = match this.invocation.take() {
+            None => {
+                // Initial call
+                let func = this.process.instance.get_func(&this.process.store, this.func_name).ok_or_else(|| {
+                    wasmi::Error::from(wasmi::core::Trap::from(
+                        wasmi::core::TrapCode::UnreachableCodeReached,
+                    ))
+                })?;
+                
+                let mut results = [wasmi::Value::I32(0); 1];
+                func.call_resumable(&mut this.process.store, &[], &mut results)
+            }
+            Some(invocation) => {
+                // Resume execution
+                let mut results = [wasmi::Value::I32(0); 1];
+                invocation.resume(&mut this.process.store, &[], &mut results)
+            }
+        };
+
+        match result {
+            Ok(wasmi::ResumableCall::Finished) => Poll::Ready(Ok(())),
+            Ok(wasmi::ResumableCall::Resumable(invocation)) => {
+                // It yielded (either via sp_sched_yield or fuel)
+                this.invocation = Some(invocation);
+                Poll::Pending
+            }
+            Err(e) => {
+                // Check if it's a fuel error - wasmi might return an error for out-of-fuel 
+                // depending on how it's configured. But with call_resumable and consume_fuel(true),
+                // it might yield if we tell it to. 
+                // Actually, wasmi 0.31 returns an Error with TrapCode::FuelExhausted.
+                Poll::Ready(Err(e))
+            }
+        }
     }
 }
