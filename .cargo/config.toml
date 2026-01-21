@@ -1,0 +1,15 @@
+[build]
+# Default to x86 for QEMU testing if not specified
+# target = "x86_64-unknown-none" 
+
+[target.x86_64-unknown-none]
+runner = "bootimage runner"
+rustflags = [
+    "-C", "link-arg=-Tlink.x", 
+]
+
+[target.riscv32imac-unknown-none-elf]
+runner = "espflash flash --monitor"
+rustflags = [
+    "-C", "link-arg=-Tlinkall.x",
+]

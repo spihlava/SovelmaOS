@@ -1,0 +1,24 @@
+[package]
+name = "sovelma-kernel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Common
+log = "0.4"
+smoltcp = { version = "0.11", default-features = false, features = ["log", "medium-ethernet", "proto-dhcpv4", "socket-tcp"] }
+
+# x86_64
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+bootloader = "0.9"
+uart_16550 = "0.3"
+x86_64 = "0.14"
+
+# ESP32-C6 (RISC-V)
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+esp-hal = { version = "0.22", features = ["esp32c6"] }
+esp-backtrace = { version = "0.14", features = ["esp32c6", "panic-handler", "println"] }
+esp-wifi = { version = "0.10", features = ["esp32c6", "wifi"] }
+
+[features]
+default = []
