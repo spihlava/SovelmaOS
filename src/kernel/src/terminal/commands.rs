@@ -41,7 +41,10 @@ pub enum Command {
     /// Show system info.
     Sysinfo,
     /// Run a test WASM module.
-    WasmTest,
+    WasmTest {
+        /// The file to run.
+        file: String,
+    },
     /// Unknown command.
     Unknown(String),
 }
@@ -104,7 +107,10 @@ impl Command {
                 Some(Command::Echo { text })
             }
             "sysinfo" | "info" => Some(Command::Sysinfo),
-            "wasm-test" | "wasm" => Some(Command::WasmTest),
+            "wasm-test" | "wasm" => {
+                let file = args.first().unwrap_or(&"hello.wasm").to_string();
+                Some(Command::WasmTest { file })
+            }
             "" => None,
             _ => Some(Command::Unknown(cmd.to_string())),
         }
@@ -128,7 +134,7 @@ impl Command {
             Command::Connect { host, port } => cmd_connect(&host, port, stack, dns),
             Command::Echo { text } => println!("{}", text),
             Command::Sysinfo => cmd_sysinfo(),
-            Command::WasmTest => cmd_wasm_test(),
+            Command::WasmTest { file } => cmd_wasm_test(&file),
             Command::Unknown(cmd) => {
                 vga::set_color(Color::LightRed, Color::Black);
                 println!("Unknown command: {}", cmd);
@@ -354,22 +360,43 @@ fn cmd_sysinfo() {
     println!();
 }
 /// Run a simple WASM module test.
-fn cmd_wasm_test() {
+fn cmd_wasm_test(filename: &str) {
     use crate::wasm::WasmEngine;
+    use crate::fs::{ROOT_FS, FileSystem};
+    use alloc::vec;
 
     println!();
     vga::set_color(Color::Cyan, Color::Black);
-    println!("WASM Runtime Test");
+    println!("WASM Runtime Test executing '{}'", filename);
     println!("-----------------");
     vga::set_color(Color::White, Color::Black);
 
-    // Simplest WASM module: (module)
-    // magic: 00 61 73 6D, version: 01 00 00 00
-    let wasm_bytes: [u8; 8] = [0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
+    // Open file
+    let handle = match ROOT_FS.open(filename) {
+        Ok(h) => h,
+        Err(e) => {
+            vga::set_color(Color::LightRed, Color::Black);
+            println!("Failed to open file: {:?}", e);
+            vga::set_color(Color::White, Color::Black);
+            return;
+        }
+    };
+    
+    // Read file
+    let size = ROOT_FS.size(handle).unwrap_or(0);
+    let mut buffer = vec![0u8; size];
+    if let Err(e) = ROOT_FS.read(handle, &mut buffer, 0) {
+        vga::set_color(Color::LightRed, Color::Black);
+        println!("Failed to read file: {:?}", e);
+        vga::set_color(Color::White, Color::Black);
+        return;
+    }
+    
+    ROOT_FS.close(handle);
 
     let engine = WasmEngine::new();
     // For now, just spawn process. In future, we'd add it to executor.
-    match engine.spawn_process(&wasm_bytes) {
+    match engine.spawn_process(&buffer) {
         Ok(_process) => {
             vga::set_color(Color::LightGreen, Color::Black);
             println!("WASM process spawned successfully!");

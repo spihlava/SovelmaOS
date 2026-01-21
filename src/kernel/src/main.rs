@@ -77,6 +77,20 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     x86_64::vga::set_color(Color::White, Color::Black);
     println!("Kernel heap initialized");
 
+    // Initialize Filesystem
+    x86_64::vga::set_color(Color::Yellow, Color::Black);
+    print!(" [INIT] ");
+    x86_64::vga::set_color(Color::White, Color::Black);
+    println!("Initializing Filesystem...");
+
+    let wasm_bytes: [u8; 8] = [0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
+    sovelma_kernel::fs::ROOT_FS.add_file("hello.wasm", &wasm_bytes);
+
+    x86_64::vga::set_color(Color::LightGreen, Color::Black);
+    print!(" [DONE] ");
+    x86_64::vga::set_color(Color::White, Color::Black);
+    println!("Filesystem populated with 'hello.wasm'");
+
     // TEST: Dynamic memory allocation
     let x = Box::new(42);
     let mut v = Vec::new();
