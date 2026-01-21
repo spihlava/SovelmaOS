@@ -1,70 +1,184 @@
-# Ruthless Critique & Audit: SovelmaOS
+# 🔍 Critical Review: SovelmaOS — Conformance to Design & State of the Art Assessment
 
-## 1. Executive Summary
-While SovelmaOS has established a functional baseline (WASM runtime, basic scheduler, in-memory FS), it currently **fails** to meet the rigorous standards of a "State of the Art" secure microkernel. The primary deficiencies are in **Capability Discipline** (Ambient Authority violates the security model) and **Runtime Efficiency** (Linear lookups, blocking structures).
+**Last Updated**: 2026-01-21
 
-## 2. Capability System (Security)
-**Rating: Critical Failure**
+## Executive Summary
 
-### 2.1 Ambient Authority Violation
-- **Current**: `sp_fs_open(path)` allows potentially any WASM process to open *any* file by string path.
-- **Critique**: This violates the fundamental "Object-Capability" principle. A process should only be able to open a file if it possesses a **Directory Capability** for the parent folder.
-- **Reference**: Fuchsia, seL4, CloudABI.
-- **Fix Estimate**: High. Requires refactoring `sp_fs_open` to `sp_fs_open_at(dir_cap, path)` and implementing Directory Capabilities.
+This review evaluates SovelmaOS against its [Design Specification](docs/DESIGN.md) and state-of-the-art microkernel standards (seL4, Fuchsia, Zephyr). **Significant progress** has been made since the initial prototype, but the project **still does not meet "State of the Art" standards** for a secure microkernel due to two critical gaps.
 
-### 2.2 Inefficient Lookup
-- **Current**: [HostState](file:///c:/Users/Sakari/Projects/SovelmaOS/src/kernel/src/wasm/host.rs#11-15) stores `capabilities: Vec<CapId>`. Access checks are linear $O(N)$.
-- **Critique**: Unacceptable for an OS kernel. As capability sets grow (files, sockets, ports), performance will degrade.
-- **Fix Estimate**: Medium. Replace `Vec` with a `SlotMap` or `HashMap` for $O(1)$ lookup.
+---
 
-### 2.3 Weak Revocation
-- **Current**: `Generation` counters exist in struct but are unchecked during access.
-- **Critique**: Security theater. Revocation primitives must be enforced at the lookup/access point.
-- **Fix Estimate**: Medium. Integrate generation checks into the `get_capability` helper.
+## ✅ What the Project Gets RIGHT
 
-## 3. WASM Runtime & Preemption
-**Rating: Major Issues**
+| Area | Status | Notes |
+|------|--------|-------|
+| **Capability-Based FS API** | ✅ Fixed | `sp_fs_open` now requires a `dir_cap` parameter (→ `open_at` pattern). Ambient authority is **banned** for FS operations. |
+| **Generation-Counter Enforcement** | ✅ Fixed | `host.rs` validates `cap.generation` against `id.generation()` before returning capability. |
+| **Capability Storage** | ✅ Improved | `HostState.capabilities` uses `BTreeMap<CapId, Capability>` (O(log N)), not linear `Vec`. |
+| **Hierarchical Filesystem** | ✅ Fixed | `ramfs.rs` implements a true tree structure: `Node::Directory(BTreeMap<String, Arc<RwLock<Node>>>)`. |
+| **Async Executor with Priority** | ✅ Good | `Executor` has 4 priority queues (Idle, Normal, High, Critical). Tasks polled high→low. |
+| **Resumable WASM Calls** | ✅ Improved | `WasmCallFuture` and `WasmTask` use `call_resumable` and handle `ResumableCall::Resumable`. |
+| **Network Polling as Task** | ✅ Fixed | `main.rs` spawns network stack polling as an async `Task`. |
+| **DirCap Model** | ✅ Implemented | `sp_get_root()` returns a capability for `/`, and `sp_fs_open` requires a directory capability. |
 
-### 3.1 Synchronous Host Calls
-- **Current**: [wasm/mod.rs](file:///c:/Users/Sakari/Projects/SovelmaOS/src/kernel/src/wasm/mod.rs) structure implies that [call()](file:///c:/Users/Sakari/Projects/SovelmaOS/src/kernel/src/wasm/mod.rs#88-104) runs until completion or fuel exhaust.
-- **Critique**: If a WASM module calls a host function that blocks (e.g., `sp_net_recv` waiting for packet), the **entire kernel thread blocks**. This defeats the purpose of the async executor.
-- **Fix Estimate**: High. Host functions must return `Poll::Pending` equivalent, requiring full integration with `wasmi`'s `ResumableCall` API and logic to suspend the [WasmProcess](file:///c:/Users/Sakari/Projects/SovelmaOS/src/kernel/src/wasm/mod.rs#82-86).
+---
 
-### 3.2 Fuel Handling
-- **Current**: Fuel is added, but the "Trapping" mechanism forces a hard stop.
-- **Critique**: Need a smooth "Yield" interrupt that doesn't just trap-and-fail but trap-and-resume.
-- **Fix Estimate**: Medium.
+## ❌ Critical Issues STILL Present
 
-## 4. Scheduling & Concurrency
-**Rating: Moderate**
+### 1. Root Capability Ambient Acquisition — *Medium Severity*
 
-### 4.1 Global Main Loop
-- **Current**: `executor.run()` is called, but network polling (`net_stack.poll()`) happens manually in [main.rs](file:///c:/Users/Sakari/Projects/SovelmaOS/src/kernel/src/main.rs) loop.
-- **Critique**: The network stack is effectively treated as a background task but coupled to the main loop. It should be an async task or interrupt-driven.
-- **Fix Estimate**: Low. Wrap network polling in a [Task](file:///c:/Users/Sakari/Projects/SovelmaOS/src/kernel/src/task/mod.rs#37-42).
+| Location | Issue |
+|----------|-------|
+| `src/kernel/src/wasm/host.rs:84-102` (`sp_get_root`) | **Any WASM module can call `sp_get_root()` and get unrestricted READ access to the root directory.** |
 
-### 4.2 Global Lock Contention
-- **Current**: `ROOT_FS` is a global `SpinMutex`.
-- **Critique**: In a single-core environment (current target), this is acceptable. For SMP, this is a bottleneck. "State of the Art" demands fine-grained locking or lock-free structures.
-- **Fix Estimate**: Low (Deferred until SMP).
+**Analysis**: While `sp_fs_open` now requires a DirCap, the `sp_get_root` function grants root access freely. In a true object-capability OS (seL4, Fuchsia), initial capabilities are granted **at spawn time** based on a manifest—not on-demand.
 
-## 5. Filesystem
-**Rating: Minimal**
+**Fix Priority**: 🔴 High  
+**Recommendation**: Remove `sp_get_root`. Inject initial `CapId`s into `HostState` during `spawn_process()` based on a security policy/manifest.
 
-### 5.1 Lack of Hierarchy
-- **Current**: [RamFs](file:///c:/Users/Sakari/Projects/SovelmaOS/src/kernel/src/fs/ramfs.rs#11-15) is a flat map `String -> Vec<u8>`.
-- **Critique**: Toy implementation. Real OS needs directory hierarchy to support the Capability model (DirCaps).
-- **Fix Estimate**: Medium. Implement Tree structure.
+---
 
-## 6. Recommendations & Roadmap
+### 2. WASM Async Host Call Integration Incomplete — *High Severity*
 
-| Priority | Component | Action | Complexity |
-| :--- | :--- | :--- | :--- |
-| **1 (Critical)** | **Security** | **Ban Ambient Authority**: Implement `DirCap` and `open_at`. | High |
-| **2 (Critical)** | **WASM** | **Async Host Calls**: Implement resumable calls for network/timers. | High |
-| **3 (Major)** | **Performance** | **O(1) Capabilities**: Switch `Vec` to `SlotMap`. | Low |
-| **4 (Major)** | **Filesystem** | **Hierarchical FS**: Implement Directories. | Medium |
-| **5 (Minor)** | **Network** | **Async Polling**: Move net stack to Executor. | Low |
+| Location | Issue |
+|----------|-------|
+| `src/kernel/src/wasm/host.rs` | All host functions (e.g., `sp_fs_read`, `sp_net_*`) are **synchronous**. They do not return `Poll::Pending`. |
 
-### Verdict
-The current implementation is a **prototype**, not yet a "product". To verify "State of the Art" status, we must forcefully implement the **Capability Discipline** (Priority 1) immediately.
+**Analysis**: If a WASM module calls a host function that performs I/O (e.g., network recv waiting for packets), the **entire executor thread blocks**. The `WasmCallFuture` only handles WASM fuel exhaustion/yield traps—not host function blocking.
+
+**Fix Priority**: 🔴 Critical  
+**Recommendation**: Host functions that may block must:
+1. Register a "pending" operation with the kernel.
+2. Return a trap (`HostTrap::Sleep` or similar).
+3. The executor resumes the WASM module when the operation completes.
+
+This requires deep integration with `wasmi::ResumableCall` API.
+
+---
+
+### 3. Fuel Trap ≠ Yield — *Medium Severity*
+
+| Location | Issue |
+|----------|-------|
+| `src/kernel/src/wasm/mod.rs:225-231` | When fuel is exhausted, `wasmi` returns `Err(TrapCode::FuelExhausted)`. The code returns `Poll::Ready(Err(e))` — **killing the task instead of resuming**. |
+
+**Analysis**: True preemption requires that when fuel runs out, the task should **yield and be re-queued**—not terminate.
+
+**Fix Priority**: 🟠 Medium  
+**Recommendation**: Catch `TrapCode::FuelExhausted` specifically, refill fuel, and return `Poll::Pending` to resume later.
+
+---
+
+### 4. No Rights Degradation on DirCap → FileCap Transition — *Low Severity*
+
+| Location | Issue |
+|----------|-------|
+| `src/kernel/src/wasm/host.rs:174-175` | When opening a file via `sp_fs_open`, the new capability always gets `READ | WRITE`. It ignores the parent DirCap's rights. |
+
+**Analysis**: In capability security, derived capabilities should have **equal or fewer** rights than the parent. Currently, a `READ`-only DirCap can open a file and grant `WRITE` access—a **privilege escalation**.
+
+**Fix Priority**: 🟡 Low (Design debt)  
+**Recommendation**: Intersect parent rights with the operation type.
+
+---
+
+### 5. Global FS Lock (Acceptable for Now) — *Informational*
+
+| Location | Issue |
+|----------|-------|
+| `src/kernel/src/fs/ramfs.rs` | Uses `RwLock` per-node (good), but handle table uses `Mutex`. |
+
+**Analysis**: Fine for single-core. Will bottleneck on SMP.
+
+**Fix Priority**: ⚪ Deferred (SMP).
+
+---
+
+## 📊 Conformance Matrix
+
+| Design Spec Requirement | Implementation Status |
+|------------------------|----------------------|
+| **Object-Capability Model** | 🟡 Partial — `sp_get_root` bypasses policy |
+| **Fuel-Based Preemption** | 🟡 Partial — fuel exhaust = kill, not yield |
+| **Hierarchical FS** | ✅ Complete |
+| **Generation Revocation** | ✅ Complete |
+| **O(1) Cap Lookup** | ✅ Fixed (BTreeMap: O(log N), acceptable) |
+| **Async Host Functions** | ❌ Not Implemented |
+| **Network as Async Task** | ✅ Complete |
+
+---
+
+## 🏆 Is It "State of the Art"?
+
+### Verdict: **No — Prototype/Research Grade**
+
+| Metric | State-of-Art Reference | SovelmaOS |
+|--------|----------------------|-----------|
+| **Capability Discipline** | seL4, Fuchsia (strict grant at spawn) | 🟡 `sp_get_root` bypass |
+| **Async I/O in Kernel** | Zephyr RTOS, Redox, Tock | ❌ Blocking host calls |
+| **Preemption** | FreeRTOS, Zephyr (time-sliced) | 🟡 Fuel-based, trap=kill |
+| **Formal Verification** | seL4 | ❌ None |
+
+---
+
+## 🛣️ Recommended Roadmap
+
+| Priority | Task | Complexity | Impact |
+|----------|------|------------|--------|
+| **P0** | Remove `sp_get_root`; inject caps at spawn | Medium | Security |
+| **P0** | Implement async host function pattern | High | Core functionality |
+| **P1** | Handle `FuelExhausted` as yield, not kill | Low | Scheduler stability |
+| **P2** | Rights degradation on cap derivation | Low | Security hardening |
+| **P3** | Add integration tests for capability revocation | Medium | Verification |
+
+---
+
+## 🎯 NEXT THREE THINGS TO DO
+
+Based on the analysis above, the **three highest-impact changes** to pursue next are:
+
+### 1. 🔒 Implement Capability Injection at Spawn (Remove `sp_get_root`)
+
+**What**: Modify `WasmEngine::spawn_process()` to accept a `Vec<Capability>` parameter representing the initial capabilities for the process. Remove the `sp_get_root` host function entirely.
+
+**Why**: This eliminates the ambient authority violation and enforces true object-capability discipline where processes can only access resources explicitly granted to them.
+
+**Files to modify**:
+- `src/kernel/src/wasm/mod.rs` — Add `initial_caps` parameter to `spawn_process()`
+- `src/kernel/src/wasm/host.rs` — Remove `sp_get_root` registration
+- `src/kernel/src/main.rs` — Update spawn call sites
+
+---
+
+### 2. ⚡ Fix FuelExhausted to Yield Instead of Kill
+
+**What**: In `WasmCallFuture` and `WasmTask`, catch `TrapCode::FuelExhausted` and return `Poll::Pending` after refilling fuel, instead of `Poll::Ready(Err(e))`.
+
+**Why**: This enables true cooperative preemption. Currently, running out of fuel kills the WASM task, which defeats the purpose of fuel-based scheduling.
+
+**Files to modify**:
+- `src/kernel/src/wasm/mod.rs` — Update error handling in `poll()` implementations
+
+---
+
+### 3. 🧪 Add Integration Test for Capability Revocation
+
+**What**: Create a test that:
+1. Spawns a WASM process with a file capability
+2. Revokes the capability mid-execution
+3. Verifies subsequent access attempts fail with "generation mismatch" error
+
+**Why**: The generation-counter revocation code exists but is **untested**. A regression here would be a critical security vulnerability.
+
+**Files to create/modify**:
+- `src/kernel/src/tests.rs` — Add `test_capability_revocation()`
+
+---
+
+## Summary
+
+> **SovelmaOS has made substantial progress** since the initial critique. The capability-based file system with DirCap is correctly implemented, the FS is hierarchical, and the executor is async-aware. However, **two critical gaps remain**: the `sp_get_root` ambient authority bypass and the lack of truly async host functions. Until these are addressed, the project remains a **promising prototype**, not a production-grade secure microkernel.
+
+---
+
+*Good night! 🌙*
