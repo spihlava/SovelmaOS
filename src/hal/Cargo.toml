@@ -1,0 +1,7 @@
+[package]
+name = "sovelma-hal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# pure trait definitions, no dependencies needed yet.

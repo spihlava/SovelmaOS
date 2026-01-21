@@ -55,8 +55,25 @@ macro_rules! serial_println {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     let serial = get_serial();
-    serial
-        .lock()
-        .write_fmt(args)
-        .expect("serial write failed");
+    serial.lock().write_fmt(args).expect("serial write failed");
+}
+
+/// A wrapper to implement HAL traits for the serial port.
+pub struct SerialWrapper;
+
+impl sovelma_hal::Serial for SerialWrapper {
+    fn write_byte(&mut self, byte: u8) {
+        get_serial().lock().send(byte);
+    }
+
+    fn read_byte(&mut self) -> Option<u8> {
+        let mut port = get_serial().lock();
+        if port.receive() != 0 {
+            // Note: uart_16550's receive() is a bit simplistic,
+            // but this works for basic HAL abstraction.
+            Some(port.receive())
+        } else {
+            None
+        }
+    }
 }

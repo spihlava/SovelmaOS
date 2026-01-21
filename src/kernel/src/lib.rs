@@ -14,8 +14,28 @@
 
 #![no_std]
 #![warn(missing_docs)]
+#![feature(abi_x86_interrupt)]
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::testutil::test_runner)]
+#![reexport_test_harness_main = "test_main"]
 
+extern crate alloc;
+
+pub mod allocator;
 pub mod arch;
+pub mod capability;
+pub mod memory;
+pub mod net;
+pub mod task;
+pub mod terminal;
+pub mod tests;
+pub mod wasm;
+
+/// Test infrastructure for the kernel.
+///
+/// Provides QEMU exit device support and test runner utilities.
+/// Used by integration test binaries.
+pub mod testutil;
 
 /// Initializes core kernel subsystems.
 ///
@@ -25,5 +45,7 @@ pub fn init() {
     {
         arch::x86_64::serial::init();
         arch::x86_64::vga::init();
+        arch::x86_64::gdt::init();
+        arch::x86_64::interrupts::init_idt();
     }
 }

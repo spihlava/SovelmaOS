@@ -1,0 +1,7 @@
+[package]
+name = "sovelma-sdk"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sovelma-common = { path = "../../common" }

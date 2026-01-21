@@ -1,0 +1,10 @@
+[package]
+name = "hello-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sovelma-sdk = { path = "../../sdk" }
+
+[lib]
+crate-type = ["cdylib"]

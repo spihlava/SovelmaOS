@@ -2,6 +2,9 @@
 //!
 //! Provides VGA text mode output and serial port communication for x86_64 platforms.
 
+pub mod gdt;
+pub mod interrupts;
+pub mod pic;
 pub mod serial;
 pub mod vga;
 

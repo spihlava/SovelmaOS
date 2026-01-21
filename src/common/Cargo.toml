@@ -1,0 +1,13 @@
+[package]
+name = "sovelma-common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bitflags = { version = "2.10.0", default-features = false }
+serde = { version = "1.0", default-features = false, features = ["derive"], optional = true }
+
+[features]
+default = []
+serde = ["dep:serde"]
+

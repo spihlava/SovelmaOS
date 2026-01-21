@@ -1,3 +1,7 @@
+---
+trigger: always_on
+---
+
 # SovelmaOS Development Rules
 
 ## 1. Code Quality & Standards
@@ -17,7 +21,7 @@
 ## 2. File Structure
 
 - `src/kernel/`: Core kernel code.
-- `src/userland/`: User-space libraries and default programs.
+- `src/userspace/`: User-space libraries and default programs.
 - `src/drivers/`: Platform-specific drivers.
 - `docs/`: All documentation.
 

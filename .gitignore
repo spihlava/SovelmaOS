@@ -1,29 +1,54 @@
 # Rust
 target/
 **/*.rs.bk
+Cargo.lock
 
-# C / Build
+# Build Artifacts
 build/
+dist/
 *.o
 *.obj
 *.elf
 *.bin
 *.hex
 *.map
+*.iso
+*.img
+*.d
+*.rlib
+*.a
 
-# IDE
+# Bootloader / QEMU
+bootimage-*.bin
+disk.img
+debug/
+
+# IDE / Editor
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
+*.iml
+*.user
+.history/
 
 # OS
 Thumbs.db
 .DS_Store
+ehthumbs.db
+Desktop.ini
 
-# Temporary & Investigation
+# Logs & Temps
 tmp/
 *.log
 *.txt
+!DESIGN.md
+!README.md
+!LICENSE
 *.json
-!Cargo.toml
 !metadata.json.example
+
+# Agent
+.gemini/
+.agent/

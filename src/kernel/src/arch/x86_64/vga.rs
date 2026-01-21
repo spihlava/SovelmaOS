@@ -21,21 +21,37 @@ const BUFFER_WIDTH: usize = 80;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Color {
+    /// Black color.
     Black = 0,
+    /// Blue color.
     Blue = 1,
+    /// Green color.
     Green = 2,
+    /// Cyan color.
     Cyan = 3,
+    /// Red color.
     Red = 4,
+    /// Magenta color.
     Magenta = 5,
+    /// Brown color.
     Brown = 6,
+    /// Light gray color.
     LightGray = 7,
+    /// Dark gray color.
     DarkGray = 8,
+    /// Light blue color.
     LightBlue = 9,
+    /// Light green color.
     LightGreen = 10,
+    /// Light cyan color.
     LightCyan = 11,
+    /// Light red color.
     LightRed = 12,
+    /// Pink color.
     Pink = 13,
+    /// Yellow color.
     Yellow = 14,
+    /// White color.
     White = 15,
 }
 
@@ -208,6 +224,16 @@ impl fmt::Write for Writer {
             }
         }
         Ok(())
+    }
+}
+
+impl sovelma_hal::Console for Writer {
+    fn write_str(&mut self, s: &str) {
+        let _ = <Self as fmt::Write>::write_str(self, s);
+    }
+
+    fn clear(&mut self) {
+        self.clear_screen();
     }
 }
 

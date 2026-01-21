@@ -2,18 +2,49 @@
 
 **State-of-the-Art Microkernel OS for ESP32 (RISC-V) and x86_64**
 
+SovelmaOS is a formally separated microkernel architecture featuring a Rust-based kernel and a WASM-based userspace.
+
+## Project Structure
+
+- `src/kernel`: The core kernel (Ring 0), managing capability-based security, memory, and task scheduling.
+- `src/userspace`: WASM application layer (Ring 3 equivalent).
+  - `sdk`: `sovelma-sdk` crate for WASM apps to access host functions.
+  - `apps`: Sample WASM applications (e.g., `hello-app`).
+- `src/common`: Shared ABI types (Capabilities, NetError) used by both kernel and userspace.
+- `src/hal`: Hardware Abstraction Layer for platform independence.
+
+## Getting Started
+
+### Prerequisites
+- Rust Nightly
+- QEMU (for x86_64 emulation)
+- WASM target: `rustup target add wasm32-unknown-unknown`
+
+### Build & Run
+```bash
+# Build the kernel
+cargo build -p sovelma-kernel --target x86_64-unknown-none
+
+# Run in QEMU
+cd src/kernel && cargo run
+
+# Build Userspace App
+cargo build -p hello-app --target wasm32-unknown-unknown
+```
+
+### Testing
+```bash
+# Run unit tests
+cargo test -p sovelma-common
+
+# Run kernel integration tests
+cd src/kernel && cargo test --target x86_64-unknown-none
+```
+
 ## Documentation
 
-- **Getting Started**: [docs/getting-started.md](docs/getting-started.md)
-- **OS Architecture**: [docs/specs/01-architecture.md](docs/specs/01-architecture.md)
-- **Filesystem**: [docs/specs/02-filesystem.md](docs/specs/02-filesystem.md)
-- **Balboa Controller**: [docs/specs/03-balboa-controller.md](docs/specs/03-balboa-controller.md)
+- [Design Specification](docs/DESIGN.md)
 
-## Development
-
-- See [.agent/rules/os-dev.md](.agent/rules/os-dev.md) for strict development rules.
-- Run quality checks with `.agent/workflows/quality-check.md`.
 
 ## License
-
-MIT License. See [LICENSE](LICENSE).
+MIT License.

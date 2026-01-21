@@ -8,18 +8,43 @@ resolver = "2"
 # Common dependencies for all architectures
 log = { version = "0.4", default-features = false }
 spin = { version = "0.9", default-features = false, features = ["once", "mutex", "spin_mutex"] }
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
+sovelma-hal = { path = "../hal" }
+crossbeam-queue = { version = "0.3", default-features = false, features = ["alloc"] }
+conquer-once = { version = "0.4", default-features = false }
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+wasmi = { version = "0.31", default-features = false }
+
+sovelma-common = { path = "../common" }
 
 # x86_64 architecture dependencies
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-bootloader = "=0.9.23"
+bootloader = { version = "0.9.23", features = ["map_physical_memory"] }
 uart_16550 = "0.3"
 x86_64 = "=0.14.11"
+pic8259 = "0.10.3"
+linked_list_allocator = "0.10.5"
+pc-keyboard = "0.7"
+smoltcp = { version = "0.11", default-features = false, features = [
+    "medium-ethernet",
+    "proto-ipv4",
+    "proto-dhcpv4",
+    "socket-tcp",
+    "socket-udp",
+    "socket-dhcpv4",
+    "socket-dns",
+    "alloc",
+] }
 
 [features]
 default = []
+test = []
 
 [profile.dev]
 panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+
+

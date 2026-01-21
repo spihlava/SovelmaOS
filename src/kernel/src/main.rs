@@ -5,16 +5,49 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
+use ::x86_64::VirtAddr;
+use alloc::{boxed::Box, vec::Vec};
+use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
+use smoltcp::time::Instant;
 use sovelma_kernel::arch::x86_64::{self, vga::Color};
+use sovelma_kernel::net::{DhcpClient, DhcpEvent, DnsResolver, NetConfig, NetworkStack, QemuE1000};
+use sovelma_kernel::terminal::{decode_scancode, Terminal};
 use sovelma_kernel::{print, println, serial_println};
+
+entry_point!(kernel_main);
+
+/// Simple tick counter for timestamps.
+static TICK_COUNT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// Get current timestamp for smoltcp.
+fn now() -> Instant {
+    let ticks = TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed);
+    // Assume ~1ms per tick (rough approximation)
+    Instant::from_millis(ticks as i64)
+}
+
+/// Increment the tick counter (called from timer interrupt or main loop).
+fn tick() {
+    TICK_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+}
 
 /// Kernel entry point.
 ///
 /// Called by the bootloader after setting up the initial environment.
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
+fn kernel_main(boot_info: &'static BootInfo) -> ! {
     sovelma_kernel::init();
+
+    // Memory initialization
+    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    let mut mapper = unsafe { sovelma_kernel::memory::init_mapper(phys_mem_offset) };
+    let mut frame_allocator =
+        unsafe { sovelma_kernel::memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
+
+    sovelma_kernel::allocator::init_heap(&mut mapper, &mut frame_allocator)
+        .expect("heap initialization failed");
 
     x86_64::vga::clear_screen();
 
@@ -33,30 +66,194 @@ pub extern "C" fn _start() -> ! {
 
     serial_println!("[OK] Serial initialized");
 
-    // Boot milestones
+    // Memory milestones
     x86_64::vga::set_color(Color::LightGreen, Color::Black);
     print!(" [DONE] ");
     x86_64::vga::set_color(Color::White, Color::Black);
-    println!("Serial port initialized (COM1)");
+    println!("Memory management initialized");
 
     x86_64::vga::set_color(Color::LightGreen, Color::Black);
     print!(" [DONE] ");
     x86_64::vga::set_color(Color::White, Color::Black);
-    println!("VGA text buffer initialized");
+    println!("Kernel heap initialized");
+
+    // TEST: Dynamic memory allocation
+    let x = Box::new(42);
+    let mut v = Vec::new();
+    for i in 0..10 {
+        v.push(i);
+    }
+    serial_println!(
+        "[OK] Heap allocation working: boxed value = {}, vec len = {}",
+        *x,
+        v.len()
+    );
+
+    // Run kernel tests
+    sovelma_kernel::tests::run_all();
+
+    // TEST: Breakpoint exception
+    ::x86_64::instructions::interrupts::int3();
+    x86_64::vga::set_color(Color::LightGreen, Color::Black);
+    print!(" [DONE] ");
+    x86_64::vga::set_color(Color::White, Color::Black);
+    println!("Exception handling verified");
+
+    // Initialize network stack
+    x86_64::vga::set_color(Color::Yellow, Color::Black);
+    print!(" [INIT] ");
+    x86_64::vga::set_color(Color::White, Color::Black);
+    println!("Initializing network stack...");
+
+    let device = QemuE1000::new();
+    let mut net_stack = NetworkStack::new(device, NetConfig::dhcp());
 
     x86_64::vga::set_color(Color::LightGreen, Color::Black);
     print!(" [DONE] ");
     x86_64::vga::set_color(Color::White, Color::Black);
-    println!("Kernel entry point reached");
+    let mac = net_stack.device().mac_address();
+    println!(
+        "Network device ready (MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x})",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+    );
 
-    serial_println!("[OK] VGA text buffer initialized");
-    serial_println!("SovelmaOS kernel entering idle loop...");
+    // Initialize DHCP client
+    let mut dhcp = DhcpClient::new();
+    dhcp.start(&mut net_stack, now());
+
+    x86_64::vga::set_color(Color::Yellow, Color::Black);
+    print!(" [INIT] ");
+    x86_64::vga::set_color(Color::White, Color::Black);
+    println!("DHCP discovery started...");
+
+    // Initialize DNS resolver (will be configured after DHCP completes)
+    let mut dns = DnsResolver::new();
+
+    // Initialize terminal
+    let mut terminal = Terminal::new();
+
+    x86_64::vga::set_color(Color::LightGreen, Color::Black);
+    print!(" [DONE] ");
+    x86_64::vga::set_color(Color::White, Color::Black);
+    println!("Terminal initialized");
 
     println!();
-    x86_64::vga::set_color(Color::Yellow, Color::Black);
-    println!(" Kernel is now running in an idle loop.");
+    x86_64::vga::set_color(Color::Cyan, Color::Black);
+    println!(" Boot complete. Type 'help' for available commands.");
+    x86_64::vga::set_color(Color::White, Color::Black);
+    println!();
 
-    x86_64::halt_loop()
+    // Show initial prompt
+    terminal.prompt();
+
+    // Main kernel loop
+    loop {
+        // Increment tick counter
+        tick();
+
+        // Poll network stack
+        net_stack.poll(now());
+
+        // Poll DHCP client
+        if let Some(event) = dhcp.poll(&mut net_stack, now()) {
+            handle_dhcp_event(&event, &mut dns, &mut net_stack);
+        }
+
+        // Poll DNS resolver for completed queries
+        for result in dns.poll(&mut net_stack) {
+            match result {
+                Ok(res) => {
+                    x86_64::vga::set_color(Color::LightGreen, Color::Black);
+                    print!("\n[DNS] ");
+                    x86_64::vga::set_color(Color::White, Color::Black);
+                    print!("{} -> ", res.hostname);
+                    for (i, addr) in res.addresses.iter().enumerate() {
+                        if i > 0 {
+                            print!(", ");
+                        }
+                        print!("{}", addr);
+                    }
+                    println!();
+                    terminal.prompt();
+                }
+                Err(e) => {
+                    x86_64::vga::set_color(Color::LightRed, Color::Black);
+                    println!("\n[DNS] Error: {}", e);
+                    x86_64::vga::set_color(Color::White, Color::Black);
+                    terminal.prompt();
+                }
+            }
+        }
+
+        // Check for keyboard input
+        if let Some(scancode) = get_scancode() {
+            if let Some(key) = decode_scancode(scancode) {
+                if let Some(command) = terminal.handle_key(key) {
+                    command.execute(&mut net_stack, &mut dhcp, &mut dns, &mut terminal, now());
+                    terminal.prompt();
+                }
+            }
+        }
+
+        // Small delay to prevent busy-waiting
+        x86_64::hlt();
+    }
+}
+
+/// Handle DHCP events.
+fn handle_dhcp_event(event: &DhcpEvent, dns: &mut DnsResolver, stack: &mut NetworkStack) {
+    match event {
+        DhcpEvent::Configured(config) => {
+            x86_64::vga::set_color(Color::LightGreen, Color::Black);
+            print!("\n[DHCP] ");
+            x86_64::vga::set_color(Color::White, Color::Black);
+            println!("IP acquired: {}/{}", config.ip, config.prefix_len);
+
+            if let Some(gw) = config.gateway {
+                println!("       Gateway: {}", gw);
+            }
+
+            if !config.dns_servers.is_empty() {
+                print!("       DNS: ");
+                for (i, server) in config.dns_servers.iter().enumerate() {
+                    if i > 0 {
+                        print!(", ");
+                    }
+                    print!("{}", server);
+                }
+                println!();
+            }
+
+            // Initialize DNS resolver with the acquired servers
+            dns.init(stack);
+
+            serial_println!("[DHCP] Configured: {}", config.ip);
+        }
+        DhcpEvent::Deconfigured => {
+            x86_64::vga::set_color(Color::Yellow, Color::Black);
+            println!("\n[DHCP] Lease expired, rediscovering...");
+            x86_64::vga::set_color(Color::White, Color::Black);
+            serial_println!("[DHCP] Deconfigured");
+        }
+        DhcpEvent::LinkLocalFallback(ip) => {
+            x86_64::vga::set_color(Color::Yellow, Color::Black);
+            println!("\n[DHCP] No server found, using link-local: {}", ip);
+            x86_64::vga::set_color(Color::White, Color::Black);
+            serial_println!("[DHCP] Link-local fallback: {}", ip);
+        }
+    }
+}
+
+/// Try to get a scancode from the keyboard queue.
+fn get_scancode() -> Option<u8> {
+    use sovelma_kernel::task::keyboard::SCANCODE_QUEUE;
+
+    // Try to get from the async keyboard queue
+    if let Some(queue) = SCANCODE_QUEUE.get() {
+        queue.pop()
+    } else {
+        None
+    }
 }
 
 /// Panic handler.
