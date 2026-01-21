@@ -5,22 +5,15 @@ edition = "2021"
 resolver = "2"
 
 [dependencies]
-# Common
+# Common dependencies for all architectures
 log = { version = "0.4", default-features = false }
-# smoltcp = { version = "0.11", default-features = false, features = ["log", "medium-ethernet", "proto-dhcpv4", "socket-tcp"] }
+spin = { version = "0.9", default-features = false, features = ["once", "mutex", "spin_mutex"] }
 
-# x86_64
+# x86_64 architecture dependencies
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-bootloader = "0.9"
+bootloader = "=0.9.23"
 uart_16550 = "0.3"
-x86_64 = "0.14"
-volatile = "0.4"
-
-# ESP32-C6 (RISC-V)
-# [target.'cfg(target_arch = "riscv32")'.dependencies]
-# esp-hal = { version = "0.22", features = ["esp32c6"] }
-# esp-backtrace = { version = "0.14", features = ["esp32c6", "panic-handler", "println"] }
-# esp-wifi = { version = "0.10", features = ["esp32c6", "wifi"] }
+x86_64 = "=0.14.11"
 
 [features]
 default = []
