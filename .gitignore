@@ -1,0 +1,25 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# C / Build
+/build/
+*.o
+*.obj
+*.elf
+*.bin
+*.hex
+*.map
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temporary
+tmp/
+*.log
