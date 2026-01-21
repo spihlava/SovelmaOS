@@ -1,9 +1,9 @@
 # Rust
-/target/
+target/
 **/*.rs.bk
 
 # C / Build
-/build/
+build/
 *.o
 *.obj
 *.elf
@@ -20,6 +20,10 @@
 Thumbs.db
 .DS_Store
 
-# Temporary
+# Temporary & Investigation
 tmp/
 *.log
+*.txt
+*.json
+!Cargo.toml
+!metadata.json.example
