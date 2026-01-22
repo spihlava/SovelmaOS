@@ -324,7 +324,10 @@ fn register_fs_functions(linker: &mut Linker<HostState>) -> Result<(), wasmi::Er
 
             // Read path from WASM memory
             let mut buffer = alloc::vec![0u8; path_len as usize];
-            if memory.read(&caller, path_ptr as usize, &mut buffer).is_err() {
+            if memory
+                .read(&caller, path_ptr as usize, &mut buffer)
+                .is_err()
+            {
                 return Ok(error::MEMORY_READ_FAILED);
             }
             let path = match core::str::from_utf8(&buffer) {
@@ -518,7 +521,10 @@ fn register_fs_functions(linker: &mut Linker<HostState>) -> Result<(), wasmi::Er
             };
 
             let mut buffer = alloc::vec![0u8; path_len as usize];
-            if memory.read(&caller, path_ptr as usize, &mut buffer).is_err() {
+            if memory
+                .read(&caller, path_ptr as usize, &mut buffer)
+                .is_err()
+            {
                 return Ok(error::MEMORY_READ_FAILED as i32);
             }
             let path = match core::str::from_utf8(&buffer) {
@@ -582,10 +588,7 @@ fn register_sync_functions(linker: &mut Linker<HostState>) -> Result<(), wasmi::
             check_fuel(&mut caller, fuel_cost::SYNC_CREATE)?;
 
             let handle = registry::create_mutex();
-            let cap = Capability::new(
-                CapabilityType::Mutex(handle),
-                CapabilityRights::CALL,
-            );
+            let cap = Capability::new(CapabilityType::Mutex(handle), CapabilityRights::CALL);
             let cap_id = caller.data_mut().add_capability(cap);
             Ok(cap_id.as_u64() as i64)
         },
@@ -726,10 +729,7 @@ fn register_sync_functions(linker: &mut Linker<HostState>) -> Result<(), wasmi::
             }
 
             let handle = registry::create_semaphore(permits as usize);
-            let cap = Capability::new(
-                CapabilityType::Semaphore(handle),
-                CapabilityRights::CALL,
-            );
+            let cap = Capability::new(CapabilityType::Semaphore(handle), CapabilityRights::CALL);
             let cap_id = caller.data_mut().add_capability(cap);
             Ok(cap_id.as_u64() as i64)
         },

@@ -16,6 +16,7 @@
 #![warn(missing_docs)]
 #![feature(abi_x86_interrupt)]
 #![feature(raw_ref_op)]
+#![feature(pointer_byte_offsets)]
 #![feature(custom_test_frameworks)]
 #![test_runner(crate::testutil::test_runner)]
 #![reexport_test_harness_main = "test_main"]

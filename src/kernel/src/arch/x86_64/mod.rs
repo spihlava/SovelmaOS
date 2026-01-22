@@ -1,9 +1,11 @@
 //! x86_64 architecture support.
 //!
-//! Provides VGA text mode output and serial port communication for x86_64 platforms.
+//! Provides VGA text mode output, serial port communication, and PCI access
+//! for x86_64 platforms.
 
 pub mod gdt;
 pub mod interrupts;
+pub mod pci;
 pub mod pic;
 pub mod serial;
 pub mod vga;

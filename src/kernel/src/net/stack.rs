@@ -2,8 +2,7 @@
 //!
 //! Provides a high-level interface for TCP/IP networking.
 
-use super::device::QemuE1000;
-use super::NetError;
+use super::{NetError, NetworkDevice};
 use alloc::vec::Vec;
 use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
 use smoltcp::socket::tcp;
@@ -63,7 +62,7 @@ impl NetConfig {
 
 /// Network stack managing smoltcp interface and sockets.
 pub struct NetworkStack {
-    device: QemuE1000,
+    device: NetworkDevice,
     interface: Interface,
     sockets: SocketSet<'static>,
     config: NetConfig,
@@ -73,16 +72,16 @@ pub struct NetworkStack {
 
 impl NetworkStack {
     /// Create a new network stack with the given device and configuration.
-    pub fn new(device: QemuE1000, config: NetConfig) -> Self {
+    pub fn new(device: NetworkDevice, config: NetConfig) -> Self {
         let mac = device.mac_address();
         let hardware_addr = HardwareAddress::Ethernet(EthernetAddress(mac));
 
         let iface_config = Config::new(hardware_addr);
-        let interface = Interface::new(
-            iface_config,
-            &mut { device.clone() },
-            Instant::from_millis(0),
-        );
+
+        // Create a dummy device for interface initialization
+        // The real device will be used during poll()
+        let mut dummy = super::QemuE1000::new();
+        let interface = Interface::new(iface_config, &mut dummy, Instant::from_millis(0));
 
         // Pre-allocate socket storage
         let sockets = SocketSet::new(Vec::with_capacity(MAX_SOCKETS));
@@ -224,12 +223,12 @@ impl NetworkStack {
     }
 
     /// Get access to the underlying device.
-    pub fn device(&self) -> &QemuE1000 {
+    pub fn device(&self) -> &NetworkDevice {
         &self.device
     }
 
     /// Get mutable access to the underlying device.
-    pub fn device_mut(&mut self) -> &mut QemuE1000 {
+    pub fn device_mut(&mut self) -> &mut NetworkDevice {
         &mut self.device
     }
 
@@ -260,12 +259,5 @@ impl NetworkStack {
     /// Get access to the socket set.
     pub fn sockets(&mut self) -> &mut SocketSet<'static> {
         &mut self.sockets
-    }
-}
-
-// QemuE1000 needs Clone for Interface::new
-impl Clone for QemuE1000 {
-    fn clone(&self) -> Self {
-        Self::new()
     }
 }
