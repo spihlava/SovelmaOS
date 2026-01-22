@@ -133,7 +133,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
                     let mut stack = net_stack.lock();
                     stack.poll(now());
                 }
-                core::future::ready(()).await;
+                sovelma_kernel::task::yield_now().await;
             }
         }));
     }
@@ -156,7 +156,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
                     let mut stack = net_stack.lock();
                     handle_dhcp_event(&e, &mut d_res, &mut stack);
                 }
-                core::future::ready(()).await;
+                sovelma_kernel::task::yield_now().await;
             }
         }));
     }
@@ -186,7 +186,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
                         }
                     }
                 }
-                core::future::ready(()).await;
+                sovelma_kernel::task::yield_now().await;
             }
         }));
     }

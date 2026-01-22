@@ -3,6 +3,7 @@
 //! Uses smoltcp's DHCP socket to acquire network configuration.
 
 use super::stack::NetworkStack;
+use crate::serial_println;
 use alloc::vec::Vec;
 use smoltcp::iface::SocketHandle;
 use smoltcp::socket::dhcpv4::{self, Event as DhcpSocketEvent};
@@ -81,7 +82,6 @@ impl DhcpClient {
 
     /// Start the DHCP discovery process.
     pub fn start(&mut self, stack: &mut NetworkStack, timestamp: Instant) {
-        // Create DHCP socket
         let socket = dhcpv4::Socket::new();
         let handle = stack.sockets().add(socket);
         self.socket = Some(handle);
@@ -150,6 +150,7 @@ impl DhcpClient {
 
     /// Fall back to a link-local address when DHCP fails.
     fn fallback_to_link_local(&mut self, stack: &mut NetworkStack) -> DhcpEvent {
+        serial_println!("[DHCP] Timeout - falling back to link-local");
         self.state = DhcpState::LinkLocal;
 
         // Generate link-local address (169.254.x.x)

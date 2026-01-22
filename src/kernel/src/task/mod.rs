@@ -11,6 +11,31 @@ use core::{
 pub mod executor;
 pub mod keyboard;
 
+/// Yields execution to allow other tasks to run.
+///
+/// Returns `Pending` once, wakes itself, then returns `Ready`.
+pub async fn yield_now() {
+    YieldNow { yielded: false }.await
+}
+
+struct YieldNow {
+    yielded: bool,
+}
+
+impl Future for YieldNow {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        if self.yielded {
+            Poll::Ready(())
+        } else {
+            self.yielded = true;
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        }
+    }
+}
+
 /// A unique identifier for a task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TaskId(u64);
