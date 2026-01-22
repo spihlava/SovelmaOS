@@ -99,7 +99,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Phase 3: Network Initialization
     // ========================================================================
     boot::log_start("Probing network device");
-    let device = NetworkDevice::probe();
+    let device = NetworkDevice::probe(boot_info.physical_memory_offset);
     let is_real_nic = device.is_real();
     let mac = device.mac_address();
     boot::log_end(if is_real_nic {

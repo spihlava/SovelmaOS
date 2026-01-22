@@ -43,8 +43,11 @@ pub enum NetworkDevice {
 
 impl NetworkDevice {
     /// Probe for a real e1000 device, falling back to loopback.
-    pub fn probe() -> Self {
-        if let Some(e1000) = E1000::probe() {
+    ///
+    /// The `phys_mem_offset` is the virtual address offset where all physical
+    /// memory is mapped (from the bootloader).
+    pub fn probe(phys_mem_offset: u64) -> Self {
+        if let Some(e1000) = E1000::probe(phys_mem_offset) {
             NetworkDevice::E1000(e1000)
         } else {
             NetworkDevice::Loopback(QemuE1000::new())

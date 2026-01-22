@@ -228,10 +228,15 @@ unsafe impl Sync for E1000 {}
 impl E1000 {
     /// Create a new e1000 driver from a PCI device.
     ///
+    /// The `phys_mem_offset` is the virtual address offset where all physical
+    /// memory is mapped (from the bootloader). This is needed to convert the
+    /// PCI BAR physical address to a virtual address.
+    ///
     /// Returns `None` if the device cannot be initialized.
-    pub fn new(pci_dev: PciDevice) -> Option<Self> {
-        // Get MMIO base address
-        let mmio_base = pci_dev.mmio_base()? as *mut u32;
+    pub fn new(pci_dev: PciDevice, phys_mem_offset: u64) -> Option<Self> {
+        // Get MMIO base address and convert to virtual address
+        let mmio_phys = pci_dev.mmio_base()?;
+        let mmio_base = (mmio_phys + phys_mem_offset) as *mut u32;
 
         // Enable PCI bus mastering and memory access
         pci_dev.enable();
@@ -266,10 +271,13 @@ impl E1000 {
 
     /// Probe for and initialize an e1000 device.
     ///
+    /// The `phys_mem_offset` is the virtual address offset where all physical
+    /// memory is mapped (from the bootloader).
+    ///
     /// Scans the PCI bus for an e1000 and initializes it if found.
-    pub fn probe() -> Option<Self> {
+    pub fn probe(phys_mem_offset: u64) -> Option<Self> {
         let pci_dev = pci::find_e1000()?;
-        Self::new(pci_dev)
+        Self::new(pci_dev, phys_mem_offset)
     }
 
     /// Get the MAC address of this device.

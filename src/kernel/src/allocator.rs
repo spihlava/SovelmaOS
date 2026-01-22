@@ -10,8 +10,14 @@ use x86_64::{
 
 /// The start address of the kernel heap.
 pub const HEAP_START: usize = 0x_4444_4444_0000;
-/// The size of the kernel heap.
-pub const HEAP_SIZE: usize = 100 * 1024; // 100 KiB
+/// The size of the kernel heap (1 MiB).
+///
+/// Must be large enough for:
+/// - e1000 driver buffers: ~128 KiB (TX + RX)
+/// - smoltcp socket buffers: ~64 KiB
+/// - WASM runtime: ~256 KiB
+/// - General allocations: ~256 KiB
+pub const HEAP_SIZE: usize = 1024 * 1024; // 1 MiB
 
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
