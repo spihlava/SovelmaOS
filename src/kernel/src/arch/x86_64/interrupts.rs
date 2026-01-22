@@ -62,8 +62,10 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
 }
 
 /// Handler for the breakpoint exception (INT3).
+///
+/// Used for debugging - logs to serial only to keep VGA clean during boot.
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
-    println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
+    crate::serial_println!("EXCEPTION: BREAKPOINT at {:#x}", stack_frame.instruction_pointer.as_u64());
 }
 
 /// Handler for the double fault exception.

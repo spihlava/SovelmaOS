@@ -18,36 +18,31 @@ pub enum Status {
     Warn,
     /// Informational - `[INFO]` in cyan
     Info,
-    /// In progress - `[    ]` in gray
-    Run,
 }
 
 /// Log a boot stage with status.
+///
+/// Format: `[ OK ] Message text`
 pub fn log(status: Status, message: &str) {
     print_status(status);
     println!(" {}", message);
 }
 
-/// Log start of an operation (shows `[    ]`).
-///
-/// Follow with `log_end()` to complete the line.
-pub fn log_start(message: &str) {
-    print_status(Status::Run);
-    print!(" {}...", message);
-}
-
-/// Complete a previous `log_start()` with final status.
-///
-/// Overwrites the in-progress indicator with the final status.
-pub fn log_end(status: Status) {
-    print!("\r");
-    print_status(status);
-    println!();
-}
-
 /// Log an indented detail line (for sub-items).
+///
+/// Format: `       Detail text` (aligned with message after status)
 pub fn log_detail(message: &str) {
     println!("       {}", message);
+}
+
+/// Log a section header.
+///
+/// Prints a blank line before the header for visual separation.
+pub fn log_section(name: &str) {
+    println!();
+    vga::set_color(Color::LightCyan, Color::Black);
+    println!("── {} ──", name);
+    vga::set_color(Color::White, Color::Black);
 }
 
 fn print_status(status: Status) {
@@ -56,7 +51,6 @@ fn print_status(status: Status) {
         Status::Fail => ("[FAIL]", Color::LightRed),
         Status::Warn => ("[WARN]", Color::Yellow),
         Status::Info => ("[INFO]", Color::LightCyan),
-        Status::Run => ("[    ]", Color::DarkGray),
     };
     vga::set_color(color, Color::Black);
     print!("{}", text);

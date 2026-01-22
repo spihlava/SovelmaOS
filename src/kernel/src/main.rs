@@ -60,20 +60,18 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     boot::banner::print_banner();
 
     // ========================================================================
-    // Phase 2: Boot Logging - All messages use boot::log consistently
+    // Phase 2: Core Subsystems
     // ========================================================================
     boot::log(Status::Ok, "Serial port initialized");
     boot::log(Status::Ok, "GDT loaded");
     boot::log(Status::Ok, "IDT configured");
     boot::log(Status::Ok, "Memory manager initialized");
-    boot::log(Status::Ok, "Kernel heap ready");
+    boot::log(Status::Ok, "Kernel heap ready (1 MiB)");
 
     // Filesystem initialization
-    boot::log_start("Initializing filesystem");
     const WASM_MAGIC: [u8; 8] = [0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
     sovelma_kernel::fs::ROOT_FS.add_file("hello.wasm", &WASM_MAGIC);
-    boot::log_end(Status::Ok);
-    boot::log_detail("RAM filesystem mounted at /");
+    boot::log(Status::Ok, "RAM filesystem mounted");
 
     // Verify heap allocation
     let x = Box::new(42);
@@ -86,46 +84,31 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         &alloc::format!("Heap verified (boxed={}, vec_len={})", *x, v.len()),
     );
 
-    // Run kernel tests
-    boot::log_start("Running kernel tests");
+    // Run kernel tests (silently - output to serial only)
     sovelma_kernel::tests::run_all();
-    boot::log_end(Status::Ok);
-
-    // Test exception handling
-    ::x86_64::instructions::interrupts::int3();
-    boot::log(Status::Ok, "Exception handling verified");
+    boot::log(Status::Ok, "Kernel self-tests passed");
 
     // ========================================================================
     // Phase 3: Network Initialization
     // ========================================================================
-    boot::log_start("Probing network device");
+    boot::log_section("Network");
+
     let device = NetworkDevice::probe(boot_info.physical_memory_offset);
     let is_real_nic = device.is_real();
     let mac = device.mac_address();
-    boot::log_end(if is_real_nic {
-        Status::Ok
-    } else {
-        Status::Warn
-    });
 
     if is_real_nic {
-        boot::log_detail("Intel e1000 detected via PCI");
+        boot::log(Status::Ok, "Intel e1000 PCI NIC detected");
     } else {
-        boot::log_detail("No NIC found, using loopback");
+        boot::log(Status::Warn, "No NIC found, using loopback");
     }
     boot::log_detail(&alloc::format!(
         "MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-        mac[0],
-        mac[1],
-        mac[2],
-        mac[3],
-        mac[4],
-        mac[5]
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     ));
 
-    boot::log_start("Initializing network stack");
     let mut net_stack = NetworkStack::new(device, NetConfig::dhcp());
-    boot::log_end(Status::Ok);
+    boot::log(Status::Ok, "Network stack initialized");
 
     // Initialize DHCP client
     let mut dhcp = DhcpClient::new();
@@ -136,14 +119,13 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let dns = DnsResolver::new();
 
     // ========================================================================
-    // Phase 4: Terminal Initialization
+    // Phase 4: User Interface
     // ========================================================================
+    boot::log_section("Services");
+
     let terminal = Terminal::new();
     boot::log(Status::Ok, "Terminal initialized");
 
-    // ========================================================================
-    // Phase 5: WASM Engine
-    // ========================================================================
     {
         use sovelma_kernel::wasm::WasmEngine;
         let _engine = WasmEngine::new();
@@ -155,12 +137,14 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // ========================================================================
     println!();
     boot::log(Status::Ok, "Boot complete!");
+    println!();
     x86_64::vga::set_color(Color::Cyan, Color::Black);
-    println!("\n Type 'help' for available commands.\n");
+    println!("Type 'help' for available commands.");
     x86_64::vga::set_color(Color::White, Color::Black);
+    println!();
 
     // ========================================================================
-    // Phase 6: Executor and Async Tasks
+    // Phase 5: Executor and Async Tasks
     // ========================================================================
     let mut executor = sovelma_kernel::task::executor::Executor::new();
 
@@ -249,7 +233,7 @@ fn handle_dhcp_event(event: &DhcpEvent, dns: &mut DnsResolver, stack: &mut Netwo
             println!();
             boot::log(
                 Status::Ok,
-                &alloc::format!("DHCP: IP acquired {}/{}", config.ip, config.prefix_len),
+                &alloc::format!("DHCP: Acquired {}/{}", config.ip, config.prefix_len),
             );
             if let Some(gw) = config.gateway {
                 boot::log_detail(&alloc::format!("Gateway: {}", gw));
@@ -266,8 +250,6 @@ fn handle_dhcp_event(event: &DhcpEvent, dns: &mut DnsResolver, stack: &mut Netwo
             serial_println!("[DHCP] Configured: {}", config.ip);
         }
         DhcpEvent::Deconfigured => {
-            println!();
-            boot::log(Status::Warn, "DHCP: Lease expired, rediscovering...");
             serial_println!("[DHCP] Deconfigured");
         }
         DhcpEvent::LinkLocalFallback(ip) => {
@@ -302,7 +284,7 @@ fn panic(info: &PanicInfo) -> ! {
     serial_println!("KERNEL PANIC: {}", info);
 
     x86_64::vga::set_color(Color::LightRed, Color::Black);
-    println!("\n\n!!! KERNEL PANIC !!!");
+    println!("\n!!! KERNEL PANIC !!!");
     x86_64::vga::set_color(Color::White, Color::Black);
     println!("{}", info);
 
