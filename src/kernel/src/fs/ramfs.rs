@@ -54,7 +54,10 @@ impl RamFs {
         }
 
         // Create File
-        let filename = parts.last().unwrap();
+        // Safety: parts is non-empty (checked above), so last() always succeeds
+        let Some(filename) = parts.last() else {
+            return; // Unreachable due to early return above, but satisfies no-unwrap rule
+        };
         let mut guard = current.write();
         if let Node::Directory(ref mut map) = *guard {
             map.insert(
@@ -147,7 +150,10 @@ impl FileSystem for RamFs {
         }
 
         let parent_parts = &parts[..parts.len() - 1];
-        let dirname = parts.last().unwrap();
+        // Safety: parts is non-empty (checked above), so last() always succeeds
+        let Some(dirname) = parts.last() else {
+            return Err(FsError::PermissionDenied); // Unreachable, but satisfies no-unwrap rule
+        };
 
         // Resolve parent
         let mut current = if base.0 == 0 {

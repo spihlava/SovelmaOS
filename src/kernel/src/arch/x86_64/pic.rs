@@ -14,6 +14,10 @@ pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 
 /// The global instance of the chained PICs.
+///
+/// SAFETY: ChainedPics::new is unsafe because incorrect offsets could cause
+/// undefined behavior. We use offsets 32 and 40, which are the standard
+/// remapped offsets that avoid conflict with CPU exceptions (0-31).
 pub static PICS: Mutex<ChainedPics> =
     Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
 

@@ -34,11 +34,18 @@ pub fn init_heap(
             .allocate_frame()
             .ok_or(MapToError::FrameAllocationFailed)?;
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+        // SAFETY: We are mapping freshly allocated physical frames to virtual pages
+        // in the heap region. The frame allocator guarantees these frames are unused.
+        // The virtual address range [HEAP_START, HEAP_START + HEAP_SIZE) is reserved
+        // for the kernel heap and not used elsewhere.
         unsafe {
             mapper.map_to(page, frame, flags, frame_allocator)?.flush();
         }
     }
 
+    // SAFETY: The heap memory region has just been mapped above with read/write
+    // permissions. HEAP_START and HEAP_SIZE define a valid, properly aligned
+    // memory region. This function is only called once during kernel initialization.
     unsafe {
         ALLOCATOR.lock().init(HEAP_START as *mut u8, HEAP_SIZE);
     }

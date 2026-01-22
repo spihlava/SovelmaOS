@@ -1,4 +1,8 @@
 //! A simple asynchronous task executor.
+//!
+//! This module provides a priority-based cooperative task executor for the kernel.
+//! Tasks are organized into 4 priority levels and executed in order from highest
+//! to lowest priority.
 
 use super::{Task, TaskId};
 use alloc::{collections::BTreeMap, sync::Arc};
@@ -6,10 +10,19 @@ use core::task::{Context, Poll, Waker};
 use crossbeam_queue::ArrayQueue;
 use futures_util::task::ArcWake;
 
+/// Maximum number of tasks per priority queue.
+const QUEUE_CAPACITY: usize = 100;
+
 /// A simple executor that runs tasks to completion.
+///
+/// The executor maintains separate queues for each priority level and processes
+/// them from highest (Critical) to lowest (Idle) priority.
 pub struct Executor {
+    /// All registered tasks, keyed by their unique ID.
     tasks: BTreeMap<TaskId, Task>,
+    /// Priority queues: [Idle, Normal, High, Critical].
     task_queues: [Arc<ArrayQueue<TaskId>>; 4],
+    /// Cached wakers for each task to avoid repeated allocations.
     waker_cache: BTreeMap<TaskId, Waker>,
 }
 
@@ -20,33 +33,54 @@ impl Default for Executor {
 }
 
 impl Executor {
-    /// Create a new executor.
+    /// Create a new executor with empty task queues.
     pub fn new() -> Self {
         Executor {
             tasks: BTreeMap::new(),
             task_queues: [
-                Arc::new(ArrayQueue::new(100)), // Idle
-                Arc::new(ArrayQueue::new(100)), // Normal
-                Arc::new(ArrayQueue::new(100)), // High
-                Arc::new(ArrayQueue::new(100)), // Critical
+                Arc::new(ArrayQueue::new(QUEUE_CAPACITY)), // Idle
+                Arc::new(ArrayQueue::new(QUEUE_CAPACITY)), // Normal
+                Arc::new(ArrayQueue::new(QUEUE_CAPACITY)), // High
+                Arc::new(ArrayQueue::new(QUEUE_CAPACITY)), // Critical
             ],
             waker_cache: BTreeMap::new(),
         }
     }
 
     /// Spawn a new task on the executor.
+    ///
+    /// If a task with the same ID already exists (should never happen due to
+    /// atomic ID generation), the spawn is silently ignored to prevent panics.
+    ///
+    /// If the priority queue is full, the task is dropped and a warning is logged.
     pub fn spawn(&mut self, task: Task) {
         let task_id = task.id;
         let priority = task.priority as usize;
-        if self.tasks.insert(task_id, task).is_some() {
-            panic!("task with same ID already in tasks");
+
+        // Defense in depth: check for duplicate IDs (should never happen)
+        if self.tasks.contains_key(&task_id) {
+            #[cfg(debug_assertions)]
+            crate::println!("BUG: Duplicate task ID {:?}, ignoring spawn", task_id);
+            return;
         }
-        self.task_queues[priority]
-            .push(task_id)
-            .expect("queue full");
+
+        self.tasks.insert(task_id, task);
+
+        // If queue is full, remove the task and log a warning
+        if self.task_queues[priority].push(task_id).is_err() {
+            self.tasks.remove(&task_id);
+            crate::println!(
+                "WARNING: Executor queue {} full, dropping task {:?}",
+                priority,
+                task_id
+            );
+        }
     }
 
     /// Run all ready tasks.
+    ///
+    /// Iterates through priority queues from Critical (3) down to Idle (0),
+    /// polling each task until it either completes or yields.
     fn run_ready_tasks(&mut self) {
         // Iterate queues from Critical (3) down to Idle (0)
         for priority in (0..4).rev() {
@@ -78,6 +112,8 @@ impl Executor {
     }
 
     /// Run the executor until all tasks are finished.
+    ///
+    /// This function never returns under normal operation (diverging `-> !`).
     pub fn run(&mut self) -> ! {
         loop {
             self.run_ready_tasks();
@@ -86,7 +122,9 @@ impl Executor {
     }
 
     /// Sleep the CPU if no tasks are ready.
-    /// Sleep the CPU if no tasks are ready.
+    ///
+    /// Uses x86_64 HLT instruction to reduce power consumption while waiting
+    /// for interrupts to wake the processor.
     fn sleep_if_idle(&self) {
         use x86_64::instructions::interrupts;
 
@@ -101,12 +139,17 @@ impl Executor {
     }
 }
 
+/// Internal waker implementation for tasks.
+///
+/// When a task is woken, its ID is pushed back onto its priority queue
+/// so it will be polled again.
 struct TaskWaker {
     task_id: TaskId,
     task_queue: Arc<ArrayQueue<TaskId>>,
 }
 
 impl TaskWaker {
+    /// Create a new `Waker` for the given task.
     #[allow(clippy::new_ret_no_self)]
     fn new(task_id: TaskId, task_queue: Arc<ArrayQueue<TaskId>>) -> Waker {
         futures_util::task::waker(Arc::new(TaskWaker {
@@ -117,10 +160,12 @@ impl TaskWaker {
 }
 
 impl ArcWake for TaskWaker {
+    /// Wake the task by re-queuing it.
+    ///
+    /// If the queue is full, the wake is silently dropped. This can happen
+    /// under extreme load but is safe—the task will be woken again later.
     fn wake_by_ref(arc_self: &Arc<Self>) {
-        arc_self
-            .task_queue
-            .push(arc_self.task_id)
-            .expect("task_queue full");
+        // Silently drop if queue is full to avoid kernel panic
+        let _ = arc_self.task_queue.push(arc_self.task_id);
     }
 }

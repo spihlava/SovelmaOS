@@ -19,7 +19,10 @@ lazy_static! {
             const STACK_SIZE: usize = 4096 * 5;
             static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
 
-            let stack_start = VirtAddr::from_ptr(unsafe { &STACK });
+            // SAFETY: We only take a raw pointer to get the address.
+            // The STACK is static and lives for the entire program duration.
+            // This is only executed once during lazy_static initialization.
+            let stack_start = VirtAddr::from_ptr(&raw const STACK as *const u8);
             stack_start + STACK_SIZE
         };
         tss
@@ -49,6 +52,9 @@ pub fn init() {
     use x86_64::instructions::tables::load_tss;
 
     GDT.0.load();
+    // SAFETY: The GDT has been loaded above with valid kernel code and TSS segments.
+    // The selectors point to valid entries in the GDT. This is called once during
+    // kernel initialization before any user code runs.
     unsafe {
         CS::set_reg(GDT.1.code_selector);
         load_tss(GDT.1.tss_selector);

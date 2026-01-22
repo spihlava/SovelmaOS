@@ -30,6 +30,7 @@ fn now() -> Instant {
 }
 
 /// Increment the tick counter (called from timer interrupt or main loop).
+#[allow(dead_code)]
 fn tick() {
     TICK_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 }
@@ -141,7 +142,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     println!("DHCP discovery started...");
 
     // Initialize DNS resolver (will be configured after DHCP completes)
-    let mut dns = DnsResolver::new();
+    let dns = DnsResolver::new();
 
     // Initialize terminal
     let terminal = Terminal::new();
@@ -206,14 +207,14 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // 3. Terminal/Keyboard Task
     {
-        let mut terminal = terminal.clone();
+        let terminal = terminal.clone();
         let net_stack = net_stack.clone();
         let dhcp = dhcp.clone();
         let dns = dns.clone();
         
         executor.spawn(sovelma_kernel::task::Task::new(async move {
             {
-                let mut t = terminal.lock();
+                let t = terminal.lock();
                 t.prompt();
             }
             loop {
@@ -237,7 +238,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 4. WASM Demo Task
     {
         use sovelma_kernel::wasm::WasmEngine;
-        let engine = WasmEngine::new();
+        let _engine = WasmEngine::new();
         // A simple "print" script in WASM (if we had a real wasm file)
         // For now, hello.wasm is just 8 bytes, so it will fail to load or run.
         // But let's try to load it anyway to test the plumbing.

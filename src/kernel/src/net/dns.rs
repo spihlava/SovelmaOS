@@ -4,7 +4,6 @@
 
 use super::stack::NetworkStack;
 use super::NetError;
-use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use smoltcp::iface::SocketHandle;

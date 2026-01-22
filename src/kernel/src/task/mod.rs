@@ -26,9 +26,13 @@ impl TaskId {
 /// Task priority levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Priority {
+    /// Lowest priority, runs only when no other tasks are ready.
     Idle = 0,
+    /// Standard priority for most tasks.
     Normal = 1,
+    /// High priority for latency-sensitive tasks.
     High = 2,
+    /// Highest priority for critical system tasks.
     Critical = 3,
 }
 

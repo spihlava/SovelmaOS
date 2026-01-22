@@ -395,7 +395,10 @@ fn cmd_wasm_test(filename: &str) {
     ROOT_FS.close(handle);
 
     let engine = WasmEngine::new();
-    match engine.spawn_process(&buffer) {
+
+    // Use spawn_process_with_caps to be safe/compliant, even if caps are empty for now.
+    // In a real test, we might want to grant some caps.
+    match engine.spawn_process_with_caps(&buffer, vec![]) {
         Ok(mut process) => {
             vga::set_color(Color::LightGreen, Color::Black);
             println!("WASM process spawned successfully!");

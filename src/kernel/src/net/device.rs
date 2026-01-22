@@ -13,7 +13,6 @@ use spin::Mutex;
 const MTU: usize = 1500;
 
 /// Maximum packet buffer size (MTU + Ethernet header).
-
 /// Packet queue capacity.
 const QUEUE_CAPACITY: usize = 16;
 

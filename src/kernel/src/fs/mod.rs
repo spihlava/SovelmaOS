@@ -3,8 +3,11 @@
 /// Error type for filesystem operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FsError {
+    /// File or directory not found.
     NotFound,
+    /// Permission denied.
     PermissionDenied,
+    /// Invalid file handle.
     InvalidHandle,
 }
 
