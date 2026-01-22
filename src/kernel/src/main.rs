@@ -30,8 +30,7 @@ fn now() -> Instant {
     Instant::from_millis(ticks as i64)
 }
 
-/// Increment the tick counter (called from timer interrupt or main loop).
-#[allow(dead_code)]
+/// Increment the tick counter (called from main loop).
 fn tick() {
     TICK_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 }
@@ -129,11 +128,11 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         let net_stack = net_stack.clone();
         executor.spawn(sovelma_kernel::task::Task::new(async move {
             loop {
+                tick();
                 {
                     let mut stack = net_stack.lock();
                     stack.poll(now());
                 }
-                // Yield to other tasks
                 core::future::ready(()).await;
             }
         }));
