@@ -38,6 +38,11 @@ pub enum Command {
         /// The text to echo.
         text: String,
     },
+    /// Ping a host.
+    Ping {
+        /// The host to ping.
+        host: String,
+    },
     /// Show system info.
     Sysinfo,
     /// Run a test WASM module.
@@ -106,6 +111,14 @@ impl Command {
                 let text = args.join(" ");
                 Some(Command::Echo { text })
             }
+            "ping" => {
+                if let Some(host) = args.first() {
+                    Some(Command::Ping { host: host.to_string() })
+                } else {
+                    println!("Usage: ping <host>");
+                    None
+                }
+            }
             "sysinfo" | "info" => Some(Command::Sysinfo),
             "wasm-test" | "wasm" => {
                 let file = args.first().unwrap_or(&"hello.wasm").to_string();
@@ -133,6 +146,7 @@ impl Command {
             Command::Dns { hostname } => cmd_dns(&hostname, stack, dns),
             Command::Connect { host, port } => cmd_connect(&host, port, stack, dns),
             Command::Echo { text } => println!("{}", text),
+            Command::Ping { host } => cmd_ping(&host, stack),
             Command::Sysinfo => cmd_sysinfo(),
             Command::WasmTest { file } => cmd_wasm_test(&file),
             Command::Unknown(cmd) => {
@@ -159,6 +173,7 @@ fn cmd_help() {
     println!("  dhcp [renew]  Show DHCP status or request new lease");
     println!("  dns <host>    Resolve hostname to IP address");
     println!("  connect <host> <port>  Open TCP connection");
+    println!("  ping <host>   Send ICMP Echo Request");
     println!("  echo <text>   Echo text to console");
     println!("  sysinfo       Show system information");
     println!("  wasm-test     Run a simple WASM module test");
@@ -423,4 +438,44 @@ fn cmd_wasm_test(filename: &str) {
     }
     vga::set_color(Color::White, Color::Black);
     println!();
+}
+
+/// Handle Ping command.
+fn cmd_ping(host: &str, stack: &mut NetworkStack) {
+    let ip = if let Some(ip) = parse_ipv4(host) {
+        ip
+    } else {
+        println!("Invalid IP address. Hostname resolution in ping not yet implemented.");
+        return;
+    };
+
+    println!("Pinging {}...", ip);
+
+    let handle = stack.icmp_socket();
+    let ident = 0x1234;
+    let seq_no = 1;
+
+    let echo_payload = [0xffu8; 8];
+    let mut echo_repr = smoltcp::wire::Icmpv4Repr::EchoRequest {
+        ident,
+        seq_no,
+        data: &echo_payload,
+    };
+
+    let mut buffer = [0u8; 16]; // 8 bytes header + 8 bytes payload
+    let mut icmp_packet = smoltcp::wire::Icmpv4Packet::new_unchecked(&mut buffer);
+    echo_repr.emit(&mut icmp_packet, &Default::default());
+
+    let mut socket = stack.sockets().get_mut::<smoltcp::socket::icmp::Socket>(handle);
+    
+    match socket.send_slice(&buffer, smoltcp::wire::IpAddress::Ipv4(ip)) {
+        Ok(_) => {
+            println!("  Echo request sent. Waiting for reply...");
+        }
+        Err(e) => {
+            vga::set_color(Color::LightRed, Color::Black);
+            println!("  Failed to send: {:?}", e);
+            vga::set_color(Color::White, Color::Black);
+        }
+    }
 }

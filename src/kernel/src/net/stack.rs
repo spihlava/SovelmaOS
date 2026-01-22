@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
 use smoltcp::socket::tcp;
 use smoltcp::socket::udp;
+use smoltcp::socket::icmp;
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address};
 
@@ -180,6 +181,20 @@ impl NetworkStack {
         self.sockets.add(socket)
     }
 
+    /// Create a new ICMP socket and return its handle.
+    pub fn icmp_socket(&mut self) -> SocketHandle {
+        let rx_buffer = icmp::PacketBuffer::new(
+            alloc::vec![icmp::PacketMetadata::EMPTY; 4],
+            alloc::vec![0; 1024],
+        );
+        let tx_buffer = icmp::PacketBuffer::new(
+            alloc::vec![icmp::PacketMetadata::EMPTY; 4],
+            alloc::vec![0; 1024],
+        );
+        let socket = icmp::Socket::new(rx_buffer, tx_buffer);
+        self.sockets.add(socket)
+    }
+
     /// Get a TCP socket by handle.
     pub fn get_tcp_socket(&mut self, handle: SocketHandle) -> &mut tcp::Socket<'static> {
         self.sockets.get_mut::<tcp::Socket>(handle)
@@ -259,5 +274,27 @@ impl NetworkStack {
     /// Get access to the socket set.
     pub fn sockets(&mut self) -> &mut SocketSet<'static> {
         &mut self.sockets
+    }
+
+    /// Check for received ICMP packets and print replies.
+    pub fn check_icmp(&mut self) {
+        let mut buffer = [0u8; 1024];
+        for (_handle, socket) in self.sockets.iter_mut() {
+            if let smoltcp::socket::Socket::Icmp(socket) = socket {
+                if socket.can_recv() {
+                    match socket.recv_slice(&mut buffer) {
+                        Ok((len, source)) => {
+                            let icmp_packet = smoltcp::wire::Icmpv4Packet::new_unchecked(&buffer[..len]);
+                            if let Ok(icmp_repr) = smoltcp::wire::Icmpv4Repr::parse(&icmp_packet, &Default::default()) {
+                                if let smoltcp::wire::Icmpv4Repr::EchoReply { ident, seq_no, .. } = icmp_repr {
+                                    crate::println!("\n[Network] Ping reply from {}: ident={}, seq={}", source, ident, seq_no);
+                                }
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                }
+            }
+        }
     }
 }

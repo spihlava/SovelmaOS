@@ -113,7 +113,11 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Initialize DHCP client
     let mut dhcp = DhcpClient::new();
     dhcp.start(&mut net_stack, now());
-    boot::log(Status::Info, "DHCP discovery started");
+    boot::log(Status::Info, "DHCP discovery started...");
+
+    // Still create DHCP client but don't start it automatically
+    let mut dhcp = DhcpClient::new();
+    // dhcp.start(&mut net_stack, now()); // Skip auto-DHCP
 
     // Initialize DNS resolver (will be configured after DHCP completes)
     let dns = DnsResolver::new();
@@ -163,6 +167,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
                 {
                     let mut stack = net_stack.lock();
                     stack.poll(now());
+                    stack.check_icmp();
                 }
                 sovelma_kernel::task::yield_now().await;
             }
@@ -204,6 +209,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
                 let t = terminal.lock();
                 t.prompt();
             }
+
             loop {
                 if let Some(scancode) = get_scancode() {
                     if let Some(key) = decode_scancode(scancode) {
