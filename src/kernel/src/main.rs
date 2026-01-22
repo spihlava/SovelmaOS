@@ -13,9 +13,10 @@ use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 use smoltcp::time::Instant;
 use sovelma_kernel::arch::x86_64::{self, vga::Color};
+use sovelma_kernel::boot::{self, Status};
 use sovelma_kernel::net::{DhcpClient, DhcpEvent, DnsResolver, NetConfig, NetworkStack, QemuE1000};
 use sovelma_kernel::terminal::{decode_scancode, Terminal};
-use sovelma_kernel::{print, println, serial_println};
+use sovelma_kernel::{println, serial_println};
 
 entry_point!(kernel_main);
 
@@ -52,45 +53,19 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     x86_64::vga::clear_screen();
 
-    // Banner
-    x86_64::vga::set_color(Color::Cyan, Color::Black);
-    println!("  ____                 _              ___  ____  ");
-    println!(" / ___|  _____   _____| |_ __ ___   / _ \\/ ___| ");
-    println!(" \\___ \\ / _ \\ \\ / / _ \\ | '_ ` _ \\ | | | \\___ \\ ");
-    println!("  ___) | (_) \\ V /  __/ | | | | | | | |_| |___) |");
-    println!(" |____/ \\___/ \\_/ \\___|_|_| |_| |_|  \\___/|____/ ");
-    println!();
-
-    x86_64::vga::set_color(Color::White, Color::Black);
-    println!(" SovelmaOS v0.1.0 booting...");
-    println!(" ---------------------------");
-
+    boot::banner::print_banner();
     serial_println!("[OK] Serial initialized");
 
-    // Memory milestones
-    x86_64::vga::set_color(Color::LightGreen, Color::Black);
-    print!(" [DONE] ");
-    x86_64::vga::set_color(Color::White, Color::Black);
-    println!("Memory management initialized");
-
-    x86_64::vga::set_color(Color::LightGreen, Color::Black);
-    print!(" [DONE] ");
-    x86_64::vga::set_color(Color::White, Color::Black);
-    println!("Kernel heap initialized");
+    boot::log(Status::Ok, "GDT loaded");
+    boot::log(Status::Ok, "IDT configured");
+    boot::log(Status::Ok, "Memory manager initialized");
+    boot::log(Status::Ok, "Kernel heap ready");
 
     // Initialize Filesystem
-    x86_64::vga::set_color(Color::Yellow, Color::Black);
-    print!(" [INIT] ");
-    x86_64::vga::set_color(Color::White, Color::Black);
-    println!("Initializing Filesystem...");
-
+    boot::log_start("Filesystem");
     const WASM_MAGIC: [u8; 8] = [0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
     sovelma_kernel::fs::ROOT_FS.add_file("hello.wasm", &WASM_MAGIC);
-
-    x86_64::vga::set_color(Color::LightGreen, Color::Black);
-    print!(" [DONE] ");
-    x86_64::vga::set_color(Color::White, Color::Black);
-    println!("Filesystem populated with 'hello.wasm'");
+    boot::log_end(Status::Ok);
 
     // TEST: Dynamic memory allocation
     let x = Box::new(42);
@@ -109,54 +84,36 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // TEST: Breakpoint exception
     ::x86_64::instructions::interrupts::int3();
-    x86_64::vga::set_color(Color::LightGreen, Color::Black);
-    print!(" [DONE] ");
-    x86_64::vga::set_color(Color::White, Color::Black);
-    println!("Exception handling verified");
+    boot::log(Status::Ok, "Exception handling verified");
 
     // Initialize network stack
-    x86_64::vga::set_color(Color::Yellow, Color::Black);
-    print!(" [INIT] ");
-    x86_64::vga::set_color(Color::White, Color::Black);
-    println!("Initializing network stack...");
-
+    boot::log_start("Network stack");
     let device = QemuE1000::new();
     let mut net_stack = NetworkStack::new(device, NetConfig::dhcp());
-
-    x86_64::vga::set_color(Color::LightGreen, Color::Black);
-    print!(" [DONE] ");
-    x86_64::vga::set_color(Color::White, Color::Black);
+    boot::log_end(Status::Ok);
     let mac = net_stack.device().mac_address();
-    println!(
-        "Network device ready (MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x})",
+    boot::log_detail(&alloc::format!(
+        "MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
-    );
+    ));
 
     // Initialize DHCP client
     let mut dhcp = DhcpClient::new();
     dhcp.start(&mut net_stack, now());
-
-    x86_64::vga::set_color(Color::Yellow, Color::Black);
-    print!(" [INIT] ");
-    x86_64::vga::set_color(Color::White, Color::Black);
-    println!("DHCP discovery started...");
+    boot::log(Status::Info, "DHCP discovery started");
 
     // Initialize DNS resolver (will be configured after DHCP completes)
     let dns = DnsResolver::new();
 
     // Initialize terminal
     let terminal = Terminal::new();
-    
-    x86_64::vga::set_color(Color::LightGreen, Color::Black);
-    print!(" [DONE] ");
-    x86_64::vga::set_color(Color::White, Color::Black);
-    println!("Terminal initialized");
+    boot::log(Status::Ok, "Terminal initialized");
 
     println!();
+    boot::log(Status::Ok, "Boot complete!");
     x86_64::vga::set_color(Color::Cyan, Color::Black);
-    println!(" Boot complete. Type 'help' for available commands.");
+    println!("\n Type 'help' for available commands.\n");
     x86_64::vga::set_color(Color::White, Color::Black);
-    println!();
 
     // Setup Executor and Tasks
     let mut executor = sovelma_kernel::task::executor::Executor::new();
@@ -242,10 +199,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         // A simple "print" script in WASM (if we had a real wasm file)
         // For now, hello.wasm is just 8 bytes, so it will fail to load or run.
         // But let's try to load it anyway to test the plumbing.
-        
+
         // We need real WASM bytes that define a "run" or "_start" function.
         // For now, we skip the actual run but show we can spawn it.
-        println!(" [WASM] Spawning background task...");
+        boot::log(Status::Info, "WASM engine ready");
     }
 
     // Run the executor
@@ -256,41 +213,36 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 fn handle_dhcp_event(event: &DhcpEvent, dns: &mut DnsResolver, stack: &mut NetworkStack) {
     match event {
         DhcpEvent::Configured(config) => {
-            x86_64::vga::set_color(Color::LightGreen, Color::Black);
-            print!("\n[DHCP] ");
-            x86_64::vga::set_color(Color::White, Color::Black);
-            println!("IP acquired: {}/{}", config.ip, config.prefix_len);
-
+            println!();
+            boot::log(
+                Status::Ok,
+                &alloc::format!("DHCP: IP acquired {}/{}", config.ip, config.prefix_len),
+            );
             if let Some(gw) = config.gateway {
-                println!("       Gateway: {}", gw);
+                boot::log_detail(&alloc::format!("Gateway: {}", gw));
             }
-
             if !config.dns_servers.is_empty() {
-                print!("       DNS: ");
-                for (i, server) in config.dns_servers.iter().enumerate() {
-                    if i > 0 {
-                        print!(", ");
-                    }
-                    print!("{}", server);
-                }
-                println!();
+                let dns_list: alloc::vec::Vec<_> = config
+                    .dns_servers
+                    .iter()
+                    .map(|s| alloc::format!("{}", s))
+                    .collect();
+                boot::log_detail(&alloc::format!("DNS: {}", dns_list.join(", ")));
             }
-
-            // Initialize DNS resolver with the acquired servers
             dns.init(stack);
-
             serial_println!("[DHCP] Configured: {}", config.ip);
         }
         DhcpEvent::Deconfigured => {
-            x86_64::vga::set_color(Color::Yellow, Color::Black);
-            println!("\n[DHCP] Lease expired, rediscovering...");
-            x86_64::vga::set_color(Color::White, Color::Black);
+            println!();
+            boot::log(Status::Warn, "DHCP: Lease expired, rediscovering...");
             serial_println!("[DHCP] Deconfigured");
         }
         DhcpEvent::LinkLocalFallback(ip) => {
-            x86_64::vga::set_color(Color::Yellow, Color::Black);
-            println!("\n[DHCP] No server found, using link-local: {}", ip);
-            x86_64::vga::set_color(Color::White, Color::Black);
+            println!();
+            boot::log(
+                Status::Warn,
+                &alloc::format!("DHCP: No server, using link-local {}", ip),
+            );
             serial_println!("[DHCP] Link-local fallback: {}", ip);
         }
     }

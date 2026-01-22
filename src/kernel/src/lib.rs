@@ -24,6 +24,7 @@ extern crate alloc;
 
 pub mod allocator;
 pub mod arch;
+pub mod boot;
 pub mod capability;
 pub mod fs;
 pub mod memory;
