@@ -109,4 +109,8 @@ pub enum CapabilityType {
     Directory(u64),
     /// Open File (handle)
     File(u64),
+    /// Kernel mutex (handle)
+    Mutex(u64),
+    /// Kernel semaphore (handle)
+    Semaphore(u64),
 }

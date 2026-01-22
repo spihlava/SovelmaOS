@@ -22,7 +22,7 @@ lazy_static! {
             // SAFETY: We only take a raw pointer to get the address.
             // The STACK is static and lives for the entire program duration.
             // This is only executed once during lazy_static initialization.
-            let stack_start = VirtAddr::from_ptr(&raw const STACK as *const u8);
+            let stack_start = unsafe { VirtAddr::from_ptr(&raw const STACK as *const u8) };
             stack_start + STACK_SIZE
         };
         tss

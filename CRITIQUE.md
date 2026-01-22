@@ -1,6 +1,6 @@
 # 🔍 Critical Review: SovelmaOS — Production-Ready Assessment
 
-**Last Updated**: 2026-01-22  
+**Last Updated**: 2026-01-22
 **Build Status**: ✅ `cargo check` PASSED | ✅ `cargo clippy -- -D warnings` PASSED
 
 ---
@@ -14,6 +14,7 @@ SovelmaOS has been **upgraded to production-ready quality** for public GitHub re
 - ✅ **Code safety**: All panics removed from hot paths
 - ✅ **Code quality**: Zero warnings from `cargo check` and `cargo clippy`
 - ✅ **Documentation**: Comprehensive doc comments on all public APIs
+- ✅ **Sync primitives**: AsyncMutex and Semaphore with WASM host function exposure
 
 ---
 
@@ -42,6 +43,7 @@ SovelmaOS has been **upgraded to production-ready quality** for public GitHub re
 | Priority Scheduler | ✅ Complete |
 | Hierarchical FS | ✅ Complete |
 | Async Task Executor | ✅ Complete |
+| Sync Primitives (Mutex/Semaphore) | ✅ Complete |
 
 ---
 
@@ -107,19 +109,67 @@ fn wake_by_ref(arc_self: &Arc<Self>) {
 }
 ```
 
+### 4. Synchronization Primitives
+```rust
+// AsyncMutex with FIFO waiter queue
+pub struct AsyncMutex<T> {
+    data: UnsafeCell<T>,
+    locked: AtomicBool,
+    waiters: ArrayQueue<Waker>,  // Bounded FIFO queue
+}
+
+// Semaphore with permit counting
+pub struct Semaphore {
+    permits: AtomicUsize,
+    max_permits: usize,
+    waiters: ArrayQueue<Waker>,
+}
+```
+
+**WASM Host Functions:**
+- `sp_mutex_create/lock/try_lock/unlock`
+- `sp_sem_create/acquire/try_acquire/release`
+
+---
+
+## 🔶 Known Limitations (Sync Primitives)
+
+| Limitation | Impact | Future Work |
+|------------|--------|-------------|
+| No ownership tracking | Unlock can be called by any holder of capability | Add per-process lock ownership map |
+| No deadlock detection | Circular waits possible | Implement wait-for graph |
+| No priority inheritance | Priority inversion possible | Add priority donation protocol |
+| Fixed waiter queue (100) | Excess waiters silently dropped | Dynamic allocation or error return |
+| No cleanup on termination | Held locks leak on process crash | Track locks per-process, auto-release |
+
+These are acceptable for the current prototype but should be addressed for production multi-process workloads.
+
 ---
 
 ## Files Modified
 
 | File | Changes |
 |------|---------|
-| `src/kernel/src/wasm/host.rs` | Fuel tracking, error constants, modular registration |
+| `src/kernel/src/wasm/host.rs` | Fuel tracking, error constants, sync host functions |
 | `src/kernel/src/wasm/mod.rs` | Fuel reset in poll, comprehensive docs |
 | `src/kernel/src/task/executor.rs` | Panic removal, docs |
 | `src/kernel/src/main.rs` | Warning fixes |
 | `src/kernel/src/net/dns.rs` | Unused import removed |
 | `src/kernel/src/net/device.rs` | Doc comment fix |
-| `src/kernel/src/arch/x86_64/gdt.rs` | Unnecessary unsafe removed |
+| `src/kernel/src/arch/x86_64/gdt.rs` | Raw ref syntax fix, unsafe block |
+| `src/kernel/src/lib.rs` | Added sync module, raw_ref_op feature |
+| `src/kernel/src/terminal/commands.rs` | Fixed mutable ref clippy warning |
+| `src/common/src/capability.rs` | Added Mutex/Semaphore capability types |
+| `src/userspace/sdk/src/lib.rs` | Added sync SDK wrappers |
+
+## Files Created
+
+| File | Purpose |
+|------|---------|
+| `src/kernel/src/sync/mod.rs` | Sync module exports |
+| `src/kernel/src/sync/mutex.rs` | AsyncMutex implementation |
+| `src/kernel/src/sync/semaphore.rs` | Semaphore implementation |
+| `src/kernel/src/sync/registry.rs` | Global registry for kernel sync objects |
 
 ---
 

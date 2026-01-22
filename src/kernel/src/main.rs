@@ -225,7 +225,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
                             let mut stack = net_stack.lock();
                             let mut d = dhcp.lock();
                             let mut d_res = dns.lock();
-                            command.execute(&mut stack, &mut d, &mut d_res, &mut t, now());
+                            command.execute(&mut stack, &mut d, &mut d_res, &t, now());
                             t.prompt();
                         }
                     }

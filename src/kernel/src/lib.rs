@@ -15,6 +15,7 @@
 #![no_std]
 #![warn(missing_docs)]
 #![feature(abi_x86_interrupt)]
+#![feature(raw_ref_op)]
 #![feature(custom_test_frameworks)]
 #![test_runner(crate::testutil::test_runner)]
 #![reexport_test_harness_main = "test_main"]
@@ -27,6 +28,7 @@ pub mod capability;
 pub mod fs;
 pub mod memory;
 pub mod net;
+pub mod sync;
 pub mod task;
 pub mod terminal;
 pub mod tests;

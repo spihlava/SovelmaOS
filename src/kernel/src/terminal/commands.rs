@@ -122,7 +122,7 @@ impl Command {
         stack: &mut NetworkStack,
         dhcp: &mut DhcpClient,
         dns: &mut DnsResolver,
-        terminal: &mut super::Terminal,
+        terminal: &super::Terminal,
         timestamp: Instant,
     ) {
         match self {
